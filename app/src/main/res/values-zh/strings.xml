@@ -73,6 +73,7 @@
     <string name="in_use">使用中</string>
     <string name="rename_node">节点名称</string>
     <string name="run_starting">正在启动…</string>
+    <string name="run_preparing">准备中</string>
     <string name="cancel_run">取消</string>
     <string name="stop_run_title">停止本次运行？</string>
     <string name="stop_run_body">已运行 %1$s。已完成的节点会保留结果，再次运行会从那里继续。</string>
@@ -558,6 +559,8 @@
     <string name="results_import">导入图片</string>
     <string name="results_imported">已导入 %1$d / %2$d。没有 Nightmare 信息的图片已跳过。</string>
     <string name="flows_import_png_none">这张图片里没有 Nightmare 流程。只有开启写入后保存的图片才带有流程。</string>
+    <string name="flows_import_png_foreign">已从 %1$s 图片读取：%2$s。它由 %3$s 生成；此流程使用这里选中的模型。</string>
+    <string name="import_read_prompt">提示词</string>
     <string name="inspector_reference_size">参考图尺寸</string>
     <string name="inspector_reference">参考图</string>
     <string name="inspector_reference_hint">模型读取的图片区域。它不会被重绘，并保留自身形状，不会适配输出尺寸。</string>
@@ -759,6 +762,7 @@
     <string name="hint_only_masked_short">渲染遮罩周围的裁剪区域：绘制位置会有更多细节</string>
     <string name="hint_stitch_short">关闭：结果是所选边框。开启：结果会贴回整张照片</string>
     <string name="hint_cfg_distilled">这些模型针对 1 进行蒸馏。高于 1 时会开始读取负面提示词，每步耗时约翻倍</string>
+    <string name="hint_flow_shift">流偏移（shift）。0 使用模型自己的值（Z-Image 为 3，NitroFusion 2 为 6）。越高，越多步数用于构图；越低，越多用于细节。修改后会重新加载模型，需要几秒</string>
     <string name="hint_dit_size">任一边均可按 %1$d 像素步长设置尺寸，无需重新加载，图片越大耗时按比例增加</string>
     <string name="hint_dit_shape">将宽度和高度设为此比例，尺寸大致不变。下方滑块可微调。无需重新加载</string>
     <string name="hint_fixed_sizes">仅限此模型训练时使用的尺寸。其他尺寸会出现块状瑕疵。无需重新加载</string>
@@ -809,6 +813,7 @@
     <string name="wan_shape_differs">图片为 %1$s，与视频的 %2$s 比例不同：将被裁剪以适应。</string>
     <string name="wan_match_picture">匹配图片（%1$s）</string>
     <string name="knob_cfg">CFG</string>
+    <string name="knob_shift">偏移</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">输出宽度</string>
     <string name="knob_output_height">输出高度</string>
@@ -1391,6 +1396,7 @@
     <string name="sampling_fold">采样器、种子和 CFG</string>
     <string name="sampling_seed_value">种子 %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
+    <string name="sampling_shift_value">偏移 %1$s</string>
     <string name="hint_wan14_seconds">视频时长（秒），每秒 16 帧。1 到 3 秒。8 Elite 上 720x1280 的 1 秒约 12 分钟，每多一秒都比上一秒更久：720p 的 3 秒可能要一小时。</string>
     <string name="hint_wan13_seconds">视频时长（秒），每秒 16 帧。0 到 5 秒，0 为单帧。8 Elite 上 832x480 的 2 秒约 2 分钟，每多一秒都比上一秒更久。</string>
     <string name="knob_smooth">平滑运动</string>
@@ -1436,7 +1442,7 @@
     <string name="licence_read">阅读完整许可</string>
     <string name="licence_accept">接受并下载</string>
     <string name="hint_h3_size">384x384 最快。面积最多相当于 768x1344；尺寸越大，能容纳的秒数越少（下方提示会说明）。不要小于 384：更小的视频会失去颜色。</string>
-    <string name="hint_h3_seconds">视频长度（秒），按 H3 自己的步长：0.9 到 5.2（24 帧每秒，22 到 124 帧）。在 8 Elite 上 384x384 的 3.0 秒约需 6 分钟；尺寸越大，最长的视频越短。</string>
+    <string name="hint_h3_seconds">视频长度（秒），按 H3 自己的步长：0.9 到 5.2（24 帧每秒，22 到 124 帧），在 8 Elite 及更新的芯片上 384x384 或更小时还有 10.1。在 8 Elite 上 384x384 的 3.0 秒约需 6 分钟；尺寸越大，最长的视频越短。</string>
     <string name="hint_prompt_h3">MiniMax H3 按段落读取提示词，如示例所示：subject_definitions（画面中是谁、声音如何：S1 is a woman in her thirties with a calm, low voice）、detailed_description（场景、镜头、时长，以及说出的台词，写成 &lt;d&gt;[Chinese] 你好。&lt;/d&gt;，任何语言）、overall_soundscape（声音：雨打在窗上）和 non_diegetic_music（背景音乐，不要就写 N/A）。在某段写 N/A 即可省略。普通的一行提示词也可以，只是没有对白和音乐。</string>
     <!-- Heat on a video render (BatteryHeat.kt) -->
     <string name="heat_title">发热</string>
@@ -1480,7 +1486,7 @@
     <string name="run_end_failed">运行失败，用时 %1$s</string>
     <string name="run_moss_layout">按布局生成</string>
     <string name="layout_tab">布局</string>
-    <string name="layout_note">为画面中的每个元素画一个框并说明它是什么。提示词描述整张图。在空白处拖动画框，拖动框可移动，拖动圆点可调整大小。</string>
+    <string name="layout_note">为画面中的每个元素画一个框并说明它是什么。提示词描述整张图。在空白处拖动画框，拖动框可移动，拖动角上的圆点可调整大小。边缘会吸附到画面中线和其他框。</string>
     <string name="layout_object">物体</string>
     <string name="layout_character">角色</string>
     <string name="layout_text">文字</string>

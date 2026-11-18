@@ -341,6 +341,20 @@ class SdSampler(
         const val LORAS = "loras"
 
         /**
+         * ⭐ GitHub #129: the flow shift, on the flow-matching DiT families. 0 = the model's own (Z-Image 3, NitroFusion 2
+         * 6). Higher spends more of the steps on the picture's layout, lower on its detail. Launch-bound
+         * ([ContextKey.flowShift]).
+         */
+        const val SHIFT = "shift"
+
+        /** ⚠ Pure: the families whose sampler is a flow and takes [SHIFT]: every DiT picture model. */
+        fun takesShift(family: Family): Boolean = family.dit && family != Family.WAN && family != Family.IRIS
+
+        /** ⚠ Pure: the node's shift as the engine reads it, or null for the model's own (0, blank, nonsense). */
+        fun shiftOf(p: Map<String, String>): String? =
+            p[SHIFT]?.trim()?.toDoubleOrNull()?.takeIf { it > 0.0 && it <= 20.0 }?.let { LoraSpec.number(it) }
+
+        /**
          * ⭐⭐ SD 1.5 Swap's ControlNet ([SwapInputs]): the type, its strength and
          * the picture picked ON the node. ⚠ The [CONTROL] port, when wired, wins
          * over the picked picture — the user's design, 2026-09-29.
@@ -1107,7 +1121,7 @@ class SdSampler(
      * panel, a saved workflow and `applyDefaults` all read.
      */
     private fun ditWidgets(): List<Widget> = baseWidgets()
-        .filterNot { it.name in setOf("scheduler", "aspect", "width", "height", "cfg") } + listOf(
+        .filterNot { it.name in setOf("scheduler", "aspect", "width", "height", "cfg") } + listOfNotNull(
         // ⭐⭐ The engine's samplers by name (GitHub #19, 2026-10-14: "not all of them are tuned
         // for Euler"). Euler stays the default: every turbo DiT here was distilled for it.
         Widget(
@@ -1124,6 +1138,8 @@ class SdSampler(
             "cfg", "float", defaultSpec().cfg.toString(), 1.0, 20.0, fine = true,
             hintRes = R.string.hint_cfg_distilled,
         ),
+        // ⭐ GitHub #129: the flow shift, 0 = the model's own ([SHIFT]).
+        if (takesShift(family)) Widget(SHIFT, "float", "0.0", 0.0, 12.0, fine = true, hintRes = R.string.hint_flow_shift) else null,
         // ⭐ The hint goes on WIDTH alone, not on both: it describes the pair,
         // and saying it twice under two adjacent sliders is noise.
         Widget(
@@ -1225,7 +1241,8 @@ class SdSampler(
         )
         // ⭐ What this phone's NPU taught us (GitHub #97): a changed budget in the key is what relaunches the backend.
         val capped = if (family.dit) BackendProcess.cappedDitBudget(budget, DeviceProbe.ditMapCap) else budget
-        val withBudget = if (capped == null) key else key.copy(memoryBudget = capped)
+        val withBudget = (if (capped == null) key else key.copy(memoryBudget = capped))
+            .let { k -> if (takesShift(family)) k.copy(flowShift = shiftOf(p)) else k }
         return if (editOnNpu(family, pictures, ModelCatalog.byId(key.model), DeviceProbe.caps())) withBudget.copy(npu = true) else withBudget
     }
 
@@ -1900,7 +1917,16 @@ class SdSampler(
         // ⭐ Match colours: the patch in the cut's colours before it is blended in, so no tinted seam.
         val patchBmp = if (matching(p)) ColorTools.matchBitmap(patchBmp, cut.image) else patchBmp
         val out = if (!p[PasteNode.STITCH].equals("true", ignoreCase = true)) {
-            InpaintPixels.composite(frame, patchBmp, dst, cut.mask)
+            // ⭐ GitHub #128: the photo's own transparency back, in the frame's pixels (padding counts as filled).
+            val sx = frame.width / frameRect.width()
+            val sy = frame.height / frameRect.height()
+            val photoAt = android.graphics.RectF(
+                -frameRect.left * sx, -frameRect.top * sy, (src.width - frameRect.left) * sx, (src.height - frameRect.top) * sy,
+            )
+            InpaintPixels.keepTransparency(
+                InpaintPixels.composite(frame, patchBmp, dst, cut.mask), src, photoAt,
+                android.graphics.RectF(0f, 0f, frame.width.toFloat(), frame.height.toFloat()), cut.mask, dst,
+            )
         } else {
             stitch(src, frame, frameRect, patchBmp, dst, cut.mask)
         }
@@ -1953,7 +1979,12 @@ class SdSampler(
             frameRect.left + dst.left * sx, frameRect.top + dst.top * sy,
             frameRect.left + dst.right * sx, frameRect.top + dst.bottom * sy,
         )
-        return InpaintPixels.composite(base, patch, into, mask)
+        // ⭐ GitHub #128: the photo's own transparency back; the frame's padding counts as filled.
+        return InpaintPixels.keepTransparency(
+            InpaintPixels.composite(base, patch, into, mask), photo,
+            place(0f, 0f, photo.width.toFloat(), photo.height.toFloat()),
+            place(frameRect.left, frameRect.top, frameRect.right, frameRect.bottom), mask, into,
+        )
     }
 
     /**

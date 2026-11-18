@@ -38,6 +38,9 @@ object MossGguf {
 
     private val F32_PREFIXES = listOf("time_embedding.", "video_embedder.", "final_linear_video.")
 
+    /** The three smallest weights, kept exact as F32 ([Fp8Q8Gguf] asks too). */
+    internal fun keepsF32(name: String): Boolean = F32_PREFIXES.any { name.startsWith(it) }
+
     /**
      * ⭐ Whether an import's header ([CustomModels.DitHead.json]) holds 16-bit or 32-bit block weights: those convert;
      * fp8 (already ~5 GB) and int8 (refused before this) do not.

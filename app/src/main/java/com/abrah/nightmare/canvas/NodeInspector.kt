@@ -926,7 +926,7 @@ fun NodeInspector(
  * ⭐ An image sampler's Scheduler, seed and CFG, folded under one header ABOVE More options, closed by default (the
  * user's call, 2026-10-25); closed, the header shows their values. The seed's padlock above Run stays where it is.
  */
-internal val SAMPLING_KNOBS = setOf("scheduler", "seed", "cfg")
+internal val SAMPLING_KNOBS = setOf("scheduler", "seed", "cfg", com.abrah.nightmare.SdSampler.SHIFT)
 
 /** ⭐ A sampler's after-render knobs, drawn under [MoreOptionsHeader]. */
 internal val MORE_OPTIONS = setOf(
@@ -2843,6 +2843,9 @@ internal fun NodeInspectorBody(
                 "seed" -> if (v.isBlank() || v == "0") stringResource(R.string.inspector_seed_random)
                     else stringResource(R.string.sampling_seed_value, v)
                 "cfg" -> stringResource(R.string.sampling_cfg_value, v)
+                // ⭐ Shift only when set: 0 is the model's own, and the fallthrough read "0.0" as a scheduler ("DPM++ 2M").
+                com.abrah.nightmare.SdSampler.SHIFT -> com.abrah.nightmare.SdSampler.shiftOf(mapOf(w.name to v))
+                    ?.let { stringResource(R.string.sampling_shift_value, it) }
                 // ⚠ The scheduler as its dropdown names it ("Euler A"), never the id ("euler_a").
                 else -> v.takeIf { it.isNotBlank() }?.let { com.abrah.nightmare.ModelCatalog.schedulerLabel(it) }
             }

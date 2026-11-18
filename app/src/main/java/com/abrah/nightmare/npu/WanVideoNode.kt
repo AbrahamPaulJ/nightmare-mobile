@@ -263,7 +263,8 @@ object WanVideoNode : NodeType {
      * and refused nothing under it; the S25 forced to v75 ran 7,056 (768x1344 0.9 s) and failed at 8,580 and 8,670.
      */
     fun fitsTokens(w: Int, h: Int, frames: Int, arch: Int, prof: WanProfile = TURBO): Boolean =
-        prof.maxTokens <= 0 || tokens(w, h, frames, prof) <= if (arch in 1..78) prof.lowArchMaxTokens else prof.maxTokens
+        if (prof.sound && frames > H3Node.SHORT_MAX_FRAMES) w.toLong() * h <= H3Node.LONG_MAX_AREA && arch !in 1..78
+        else prof.maxTokens <= 0 || tokens(w, h, frames, prof) <= if (arch in 1..78) prof.lowArchMaxTokens else prof.maxTokens
 
     /**
      * ⚠ Pure: the NPU holds the clip: by the measured token ceiling where a profile has one ([fitsTokens]; the byte model

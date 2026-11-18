@@ -120,7 +120,8 @@ fun RunFrame(
                 }
                 .then(if (fullLogOnTap) Modifier.clickable { full = true } else Modifier),
         ) {
-            val frac = log.step?.takeIf { it.second > 0 }?.let { (s, t) -> s.toFloat() / t }
+            // ⭐ The run bar's own number ([RunLogState.fraction], item 88), so the ring and the bar agree.
+            val frac = if (log.running) log.fraction(rememberRunElapsed(log)) else null
             Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).graphicsLayer { alpha = pulse?.value ?: 1f }.clip(CircleShape).background(MaterialTheme.colorScheme.primary))
@@ -138,7 +139,7 @@ fun RunFrame(
                 }
                 Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)) {
                     Text(
-                        log.stepLabel ?: "…",
+                        log.stepLabel ?: if (log.preparing) stringResource(R.string.run_preparing) else "…",
                         fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
                     )
                     Spacer(Modifier.weight(1f))

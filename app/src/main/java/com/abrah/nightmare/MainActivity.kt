@@ -164,6 +164,7 @@ class MainActivity : ComponentActivity() {
         // previous selection.
         SelectedModel.load(this)
         DeviceProbe.loadHmxVerdict(this)
+        com.abrah.nightmare.canvas.RunProgress.load(this)
         // ⭐ The API, if it was left on (`api/ApiService.kt`).
         runCatching { com.abrah.nightmare.api.ApiService.syncWith(this) }
         // ⚠ Before NODE_TYPES is touched: the upscale node's default and its

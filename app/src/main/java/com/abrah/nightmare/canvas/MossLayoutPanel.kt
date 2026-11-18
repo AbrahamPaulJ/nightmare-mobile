@@ -22,6 +22,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,8 +59,10 @@ import com.abrah.nightmare.ui.dangerOutlinedColors
 /**
  * ⭐⭐ A MOSS sampler's **Layout** tab (GitHub #77; the plugin's editor, LinXce/Comfyui-Moss-LayoutPrompt, made for a
  * finger): the picture's shape with one box per element. Drag on an empty part to draw a box, drag a box to move it,
- * drag its corner dot to resize it, tap to select (a second tap where boxes overlap picks the next one down). Under it,
- * one card per box: what it is (object, character, text), what it looks like, and for text the exact words.
+ * drag any corner dot to resize it, tap to select (a second tap where boxes overlap picks the next one down); edges snap
+ * to the picture's edges and middle and to the other boxes ([LayoutSnap]). Undo and redo beside Add box. Under it, one
+ * card per box: what it is (object, character, text), its place and size in pixels, what it looks like, and for text
+ * the exact words. GitHub #132 asked for the undo, the snapping, the typed size and the easier resize.
  *
  * ⚠ The boxes are kept as fractions on the node ([MossLayout.PARAM]), so changing the picture's size keeps them where
  * they were drawn. A drag writes the node once, when the finger lifts; typing writes as it goes, as every field does.
@@ -65,6 +73,8 @@ internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) ->
     var selected by remember { mutableIntStateOf(-1) }
     var clearing by remember { mutableStateOf(false) }
     fun commit(l: MossLayout.Layout) { layout = l; onSave(MossLayout.write(l)) }
+    // ⭐ GitHub #132: undo and redo, the mask window's own history ([EditHistory]), watching what the node holds.
+    val history = rememberEditHistory(Unit, param.orEmpty())
     val labels = listOf(
         stringResource(R.string.layout_object), stringResource(R.string.layout_character), stringResource(R.string.layout_text),
     )
@@ -72,6 +82,12 @@ internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) ->
         Text(stringResource(R.string.layout_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LayoutCanvas(layout, selected, w, h, onSelect = { selected = it }, onLive = { layout = it }, onDone = { commit(it) })
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { history.undo(param.orEmpty()) { layout = MossLayout.read(it); onSave(it) } }, enabled = history.canUndo) {
+                Icon(com.abrah.nightmare.ui.UndoIcon, contentDescription = stringResource(R.string.draw_undo))
+            }
+            IconButton(onClick = { history.redo(param.orEmpty()) { layout = MossLayout.read(it); onSave(it) } }, enabled = history.canRedo) {
+                Icon(com.abrah.nightmare.ui.RedoIcon, contentDescription = stringResource(R.string.draw_redo))
+            }
             StudioOutlinedButton(onClick = {
                 // ⭐ A new box in the middle, a third of the picture, offset so a second one is not hidden under the first.
                 val k = (layout.boxes.size % 4) * 0.05
@@ -89,7 +105,7 @@ internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) ->
         }
         layout.boxes.forEachIndexed { i, b ->
             BoxCard(
-                i, b, labels, selected == i,
+                i, b, labels, selected == i, w, h,
                 onSelect = { selected = i },
                 onChange = { nb -> commit(layout.copy(boxes = layout.boxes.toMutableList().also { it[i] = nb })) },
                 onDelete = {
@@ -121,6 +137,31 @@ private const val MIN_SIDE = 0.04
 
 private enum class Drag { NONE, MOVE, RESIZE, DRAW }
 
+/**
+ * ⭐ GitHub #132: snap-to-align. A dragged box's edges and centre snap to the picture's edges and centre and to the
+ * other boxes' edges and centres, within [TOLERANCE_DP]; the lines it snapped to are drawn while the finger is down.
+ */
+internal object LayoutSnap {
+    const val TOLERANCE_DP = 8
+
+    /** ⚠ Pure: the lines on one axis ([x] or y) a box other than [skip] offers, with the picture's three. */
+    fun lines(boxes: List<MossLayout.Box>, skip: Int, x: Boolean): List<Double> =
+        listOf(0.0, 0.5, 1.0) + boxes.filterIndexed { i, _ -> i != skip }.flatMap { b ->
+            if (x) listOf(b.x1, (b.x1 + b.x2) / 2, b.x2) else listOf(b.y1, (b.y1 + b.y2) / 2, b.y2)
+        }
+
+    /** ⚠ Pure: the shift that puts the nearest of [edges] on one of [lines], within [tol], and that line; (0, null) for none. */
+    fun snap(edges: List<Double>, lines: List<Double>, tol: Double): Pair<Double, Double?> {
+        var best = 0.0
+        var at: Double? = null
+        for (e in edges) for (l in lines) {
+            val d = l - e
+            if (kotlin.math.abs(d) <= tol && (at == null || kotlin.math.abs(d) < kotlin.math.abs(best))) { best = d; at = l }
+        }
+        return best to at
+    }
+}
+
 @Composable
 private fun LayoutCanvas(
     layout: MossLayout.Layout,
@@ -138,6 +179,10 @@ private fun LayoutCanvas(
     val latest by androidx.compose.runtime.rememberUpdatedState(layout)
     val latestSel by androidx.compose.runtime.rememberUpdatedState(selected)
     val border = MaterialTheme.colorScheme.outline
+    val tolPx = with(LocalDensity.current) { LayoutSnap.TOLERANCE_DP.dp.toPx() }
+    // The lines a drag has snapped to, (true = vertical line at x, false = horizontal at y); drawn while the finger is down.
+    var guides by remember { mutableStateOf(emptyList<Pair<Boolean, Double>>()) }
+    val guide = MaterialTheme.colorScheme.primary
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         // ⚠ A tall picture is held to 360dp high, so the cards stay in reach under it.
         Canvas(
@@ -152,12 +197,20 @@ private fun LayoutCanvas(
                         val fy0 = (down.position.y / sz.height).toDouble().coerceIn(0.0, 1.0)
                         val boxes = latest.boxes
                         val sel = latestSel
-                        // ⭐ The selected box's corner dot first, then the boxes under the finger, top-most first; a box
-                        // already selected keeps the grab, so a drag never switches its target by accident.
-                        val onHandle = sel in boxes.indices && boxes[sel].let { b ->
-                            kotlin.math.abs(down.position.x - (b.x2 * sz.width).toFloat()) < handle * 2 &&
-                                kotlin.math.abs(down.position.y - (b.y2 * sz.height).toFloat()) < handle * 2
+                        // ⭐ The selected box's corners first (any of the four, GitHub #132: the one dot was hard to reach
+                        // with a finger or the S Pen), then the boxes under the finger, top-most first; a box already
+                        // selected keeps the grab, so a drag never switches its target by accident.
+                        val corner = if (sel !in boxes.indices) null else boxes[sel].let { b ->
+                            listOf(false to false, true to false, false to true, true to true).map { (r, d) ->
+                                Triple(r, d, kotlin.math.hypot(
+                                    down.position.x - ((if (r) b.x2 else b.x1) * sz.width).toFloat(),
+                                    down.position.y - ((if (d) b.y2 else b.y1) * sz.height).toFloat(),
+                                ))
+                            }.filter { it.third < handle * 2.5f }.minByOrNull { it.third }
                         }
+                        val onHandle = corner != null
+                        val tolX = tolPx / sz.width.toDouble()
+                        val tolY = tolPx / sz.height.toDouble()
                         val under = boxes.indices.reversed().filter { i -> boxes[i].let { fx0 in it.x1..it.x2 && fy0 in it.y1..it.y2 } }
                         val target = when {
                             onHandle -> sel
@@ -177,20 +230,36 @@ private fun LayoutCanvas(
                             if (!moved && kotlin.math.hypot(c.position.x - down.position.x, c.position.y - down.position.y) < viewConfiguration.touchSlop) continue
                             moved = true
                             c.consume()
+                            var snapped = emptyList<Pair<Boolean, Double>>()
                             work = when (mode) {
                                 Drag.MOVE -> {
                                     val b = boxes[target]
                                     val bw = b.x2 - b.x1
                                     val bh = b.y2 - b.y1
-                                    val nx = (b.x1 + dx).coerceIn(0.0, 1.0 - bw)
-                                    val ny = (b.y1 + dy).coerceIn(0.0, 1.0 - bh)
+                                    var nx = b.x1 + dx
+                                    var ny = b.y1 + dy
+                                    val (sx, lx) = LayoutSnap.snap(listOf(nx, nx + bw / 2, nx + bw), LayoutSnap.lines(boxes, target, true), tolX)
+                                    val (sy, ly) = LayoutSnap.snap(listOf(ny, ny + bh / 2, ny + bh), LayoutSnap.lines(boxes, target, false), tolY)
+                                    nx = (nx + sx).coerceIn(0.0, 1.0 - bw)
+                                    ny = (ny + sy).coerceIn(0.0, 1.0 - bh)
+                                    snapped = listOfNotNull(lx?.let { true to it }, ly?.let { false to it })
                                     latest.copy(boxes = boxes.toMutableList().also { it[target] = b.copy(x1 = nx, y1 = ny, x2 = nx + bw, y2 = ny + bh) })
                                 }
                                 Drag.RESIZE -> {
                                     val b = boxes[target]
-                                    val nx2 = (b.x2 + dx).coerceIn(b.x1 + MIN_SIDE, 1.0)
-                                    val ny2 = (b.y2 + dy).coerceIn(b.y1 + MIN_SIDE, 1.0)
-                                    latest.copy(boxes = boxes.toMutableList().also { it[target] = b.copy(x2 = nx2, y2 = ny2) })
+                                    val (right, lower) = corner!!.first to corner.second
+                                    val ex = (if (right) b.x2 else b.x1) + dx
+                                    val ey = (if (lower) b.y2 else b.y1) + dy
+                                    val (sx, lx) = LayoutSnap.snap(listOf(ex), LayoutSnap.lines(boxes, target, true), tolX)
+                                    val (sy, ly) = LayoutSnap.snap(listOf(ey), LayoutSnap.lines(boxes, target, false), tolY)
+                                    snapped = listOfNotNull(lx?.let { true to it }, ly?.let { false to it })
+                                    val nb = b.copy(
+                                        x1 = if (right) b.x1 else (ex + sx).coerceIn(0.0, b.x2 - MIN_SIDE),
+                                        x2 = if (right) (ex + sx).coerceIn(b.x1 + MIN_SIDE, 1.0) else b.x2,
+                                        y1 = if (lower) b.y1 else (ey + sy).coerceIn(0.0, b.y2 - MIN_SIDE),
+                                        y2 = if (lower) (ey + sy).coerceIn(b.y1 + MIN_SIDE, 1.0) else b.y2,
+                                    )
+                                    latest.copy(boxes = boxes.toMutableList().also { it[target] = nb })
                                 }
                                 Drag.DRAW -> {
                                     val fx = (fx0 + dx).coerceIn(0.0, 1.0)
@@ -205,9 +274,11 @@ private fun LayoutCanvas(
                                 }
                                 Drag.NONE -> latest
                             }
+                            guides = snapped
                             onLive(work)
                             onSelect(if (mode == Drag.DRAW) drawing else target)
                         } while (true)
+                        guides = emptyList()
                         if (moved) onDone(work)
                         else if (under.isNotEmpty()) {
                             // ⭐ A tap: the box under the finger; again where boxes overlap, the next one down.
@@ -228,9 +299,17 @@ private fun LayoutCanvas(
                 drawRect(col, tl, Size(t.size.width + 8.dp.toPx(), t.size.height + 2.dp.toPx()))
                 drawText(t, color = Color.Black, topLeft = tl + Offset(4.dp.toPx(), 1.dp.toPx()))
                 if (i == selected) {
-                    drawCircle(Color.White, handle * 0.8f, Offset(tl.x + bs.width, tl.y + bs.height))
-                    drawCircle(col, handle * 0.55f, Offset(tl.x + bs.width, tl.y + bs.height))
+                    // ⭐ A dot on every corner: each one resizes (GitHub #132).
+                    for (cx in listOf(tl.x, tl.x + bs.width)) for (cy in listOf(tl.y, tl.y + bs.height)) {
+                        drawCircle(Color.White, handle * 0.8f, Offset(cx, cy))
+                        drawCircle(col, handle * 0.55f, Offset(cx, cy))
+                    }
                 }
+            }
+            val dash = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))
+            for ((vertical, at) in guides) {
+                if (vertical) drawLine(guide, Offset((at * size.width).toFloat(), 0f), Offset((at * size.width).toFloat(), size.height), 1.5.dp.toPx(), pathEffect = dash)
+                else drawLine(guide, Offset(0f, (at * size.height).toFloat()), Offset(size.width, (at * size.height).toFloat()), 1.5.dp.toPx(), pathEffect = dash)
             }
         }
     }
@@ -242,6 +321,8 @@ private fun BoxCard(
     b: MossLayout.Box,
     labels: List<String>,
     selected: Boolean,
+    w: Int,
+    h: Int,
     onSelect: () -> Unit,
     onChange: (MossLayout.Box) -> Unit,
     onDelete: () -> Unit,
@@ -274,6 +355,28 @@ private fun BoxCard(
             label = { Text(stringResource(R.string.layout_caption)) },
             modifier = Modifier.fillMaxWidth(),
         )
+        // ⭐ GitHub #132: the box's place and size typed, in the picture's own pixels. Written when the field is left or
+        // Done is pressed, so a half-typed number never squashes the box.
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val pw = w.coerceAtLeast(1)
+            val ph = h.coerceAtLeast(1)
+            PxField("X", (b.x1 * pw).toInt(), Modifier.weight(1f)) { v ->
+                val bw = b.x2 - b.x1
+                val nx = (v.toDouble() / pw).coerceIn(0.0, 1.0 - bw)
+                onChange(b.copy(x1 = nx, x2 = nx + bw))
+            }
+            PxField("Y", (b.y1 * ph).toInt(), Modifier.weight(1f)) { v ->
+                val bh = b.y2 - b.y1
+                val ny = (v.toDouble() / ph).coerceIn(0.0, 1.0 - bh)
+                onChange(b.copy(y1 = ny, y2 = ny + bh))
+            }
+            PxField("W", ((b.x2 - b.x1) * pw).toInt(), Modifier.weight(1f)) { v ->
+                onChange(b.copy(x2 = (b.x1 + v.toDouble() / pw).coerceIn(b.x1 + MIN_SIDE, 1.0)))
+            }
+            PxField("H", ((b.y2 - b.y1) * ph).toInt(), Modifier.weight(1f)) { v ->
+                onChange(b.copy(y2 = (b.y1 + v.toDouble() / ph).coerceIn(b.y1 + MIN_SIDE, 1.0)))
+            }
+        }
         if (b.label == "text") {
             OutlinedTextField(
                 value = b.text,
@@ -285,6 +388,22 @@ private fun BoxCard(
             )
         }
     }
+}
+
+/** One whole-pixel field of a box card; [onSet] runs when it is left or Done is pressed, with a number in it. */
+@Composable
+private fun PxField(label: String, value: Int, modifier: Modifier, onSet: (Int) -> Unit) {
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    fun set() { text.trim().toIntOrNull()?.takeIf { it != value && it >= 0 }?.let(onSet) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it.filter(Char::isDigit).take(5) },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { set() }),
+        modifier = modifier.onFocusChanged { if (!it.isFocused) set() },
+    )
 }
 
 /**

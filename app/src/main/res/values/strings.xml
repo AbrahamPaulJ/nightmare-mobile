@@ -92,6 +92,7 @@
     <string name="in_use">In use</string>
     <string name="rename_node">Node name</string>
     <string name="run_starting">starting…</string>
+    <string name="run_preparing">preparing</string>
     <string name="cancel_run">Cancel</string>
     <string name="stop_run_title">Stop this run?</string>
     <string name="stop_run_body">It has been running for %1$s. Nodes that already finished keep their results, so Run again carries on from them.</string>
@@ -585,6 +586,8 @@
     <string name="results_import">Import pictures</string>
     <string name="results_imported">Imported %1$d of %2$d. Pictures without Nightmare\'s info were skipped.</string>
     <string name="flows_import_png_none">This picture has no Nightmare flow inside. Only pictures saved with \"Write how it was made\" on carry one.</string>
+    <string name="flows_import_png_foreign">Read from a %1$s picture: %2$s. It was made with %3$s; this flow uses the model selected here.</string>
+    <string name="import_read_prompt">the prompt</string>
     <string name="inspector_reference_size">Reference size</string>
     <string name="inspector_reference">Reference</string>
     <string name="inspector_reference_hint">the part of this picture the model reads. It is not redrawn, and it keeps its own shape. It is never fitted to your output size.</string>
@@ -786,6 +789,7 @@
     <string name="hint_only_masked_short">render a crop around the mask: more detail where you painted</string>
     <string name="hint_stitch_short">off: the result is the frame you chose. on: it is pasted back into the whole photo</string>
     <string name="hint_cfg_distilled">1 is what these models are distilled for. Above 1 the negative prompt starts being read, and each step costs about twice as long</string>
+    <string name="hint_flow_shift">Flow shift. 0 uses the model\'s own (Z-Image 3, NitroFusion 2 6). Higher spends more of the steps on the layout, lower on fine detail. A change reloads the model, a few seconds</string>
     <string name="hint_dit_size">any size in %1$d-pixel steps, either edge. No reload, and a bigger picture takes proportionally longer</string>
     <string name="hint_dit_shape">sets Width and Height to this shape at about the same size. The sliders below fine-tune it. No reload</string>
     <string name="hint_fixed_sizes">only the sizes this model was trained at. Other sizes come out in blocks. No reload</string>
@@ -836,6 +840,7 @@
     <string name="wan_shape_differs">The picture is %1$s, a different shape from the clip\'s %2$s: it will be cropped to fit.</string>
     <string name="wan_match_picture">Match picture (%1$s)</string>
     <string name="knob_cfg">CFG</string>
+    <string name="knob_shift">Shift</string>
     <string name="knob_loras">LoRAs</string>
     <string name="knob_output_width">Output width</string>
     <string name="knob_output_height">Output height</string>
@@ -1422,6 +1427,7 @@
     <string name="sampling_fold">Scheduler, seed and CFG</string>
     <string name="sampling_seed_value">seed %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
+    <string name="sampling_shift_value">shift %1$s</string>
     <string name="hint_wan14_seconds">Clip length in seconds, 16 frames each. 1 to 3. 1 s at 720x1280 takes about 12 minutes on an 8 Elite, and each second more takes longer than the last: 3 s at 720p can take an hour.</string>
     <string name="hint_wan13_seconds">Clip length in seconds, 16 frames each. 0 to 5, 0 is a still. 2 s at 832x480 takes about 2 minutes on an 8 Elite, and each second more takes longer than the last.</string>
     <string name="knob_smooth">Smooth motion</string>
@@ -1467,7 +1473,7 @@
     <string name="licence_read">Read the full licence</string>
     <string name="licence_accept">I accept, download</string>
     <string name="hint_h3_size">384x384 is the quickest. Up to 768x1344 worth of pixels; a larger size fits fewer seconds (the note below says when). Nothing under 384: smaller clips lose their colours.</string>
-    <string name="hint_h3_seconds">Clip length in seconds, in H3\'s own steps: 0.9 to 5.2 (22 to 124 frames at 24 fps). 3.0 at 384x384 takes about 6 minutes on an 8 Elite; the larger the size, the shorter the longest clip.</string>
+    <string name="hint_h3_seconds">Clip length in seconds, in H3\'s own steps: 0.9 to 5.2 (22 to 124 frames at 24 fps), and 10.1 at 384x384 or smaller on an 8 Elite or newer. 3.0 at 384x384 takes about 6 minutes on an 8 Elite; the larger the size, the shorter the longest clip.</string>
     <string name="hint_prompt_h3">MiniMax H3 reads its prompt in sections, as in the example: subject_definitions (who is on camera and how they sound: S1 is a woman in her thirties with a calm, low voice), detailed_description (the scene, the camera, the length, and the words said out loud as &lt;d&gt;[English] Hello there.&lt;/d&gt;, any language), overall_soundscape (the sounds: rain on the window) and non_diegetic_music (background music, or N/A for none). Write N/A in a section to leave it out. A plain one-line prompt works too, with no speech and no music.</string>
     <!-- Heat on a video render (BatteryHeat.kt) -->
     <string name="heat_title">Heat</string>
@@ -1511,7 +1517,7 @@
     <string name="run_end_failed">Run failed after %1$s</string>
     <string name="run_moss_layout">rendering with its layout</string>
     <string name="layout_tab">Layout</string>
-    <string name="layout_note">Draw a box for each thing in the picture and say what it is. The prompt describes the whole picture. Drag on an empty part to draw a box, drag a box to move it, drag its dot to resize it.</string>
+    <string name="layout_note">Draw a box for each thing in the picture and say what it is. The prompt describes the whole picture. Drag on an empty part to draw a box, drag a box to move it, drag a corner dot to resize it. Edges snap to the picture\'s middle and to the other boxes.</string>
     <string name="layout_object">Object</string>
     <string name="layout_character">Character</string>
     <string name="layout_text">Text</string>

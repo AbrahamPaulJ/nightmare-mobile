@@ -270,9 +270,14 @@ data class ContextKey(
      * relaunches the backend.
      */
     val npu: Boolean = false,
+    /**
+     * ⭐ The flow shift the node asked for (GitHub #129, `NM_DIT_FLOW_SHIFT`), or null for the model's own. The engine reads
+     * it once per launch, so a changed shift relaunches the backend, as a changed [memoryBudget] does.
+     */
+    val flowShift: String? = null,
 ) {
     override fun toString() = "$type/$model/${width}x$height" + (memoryBudget?.let { " (budget $it GiB)" } ?: "") +
-        (if (npu) " (NPU)" else "")
+        (if (npu) " (NPU)" else "") + (flowShift?.let { " (shift $it)" } ?: "")
 }
 
 /**

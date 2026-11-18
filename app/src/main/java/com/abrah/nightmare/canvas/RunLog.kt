@@ -155,8 +155,33 @@ data class RunLogState(
      * you there. Asked for from the phone, 2026-09-11.
      */
     val keptCount: Int = 0,
+    /** ⭐ Where the bar's clock starts ([RunProgress]): the run's start, then the start of the node after a stepped one. */
+    val clockFromMs: Long = 0L,
+    /** The model (or node type) [RunProgress] learns this node's split under; null for a node with no steps. */
+    val progressKey: String? = null,
+    /** The node's time from [clockFromMs] to its first step, once that step has come. */
+    val prepMs: Long? = null,
+    /** A node with steps has finished in this run: what runs after it (save, output) is the run's last part. */
+    val stepsDone: Boolean = false,
 ) {
     val running: Boolean get() = startedAtMs > 0L
+
+    /** The clock [fraction] measures from, in `elapsedRealtime`. */
+    fun clockOrigin(): Long = if (clockFromMs > 0L) clockFromMs else startedAtMs
+
+    /** ⭐ Counting nothing yet: a sampler loading its model and reading its prompt. The label says "preparing". */
+    val preparing: Boolean
+        get() = running && progressKey != null && phase == null && (step == null || step.first <= 0)
+
+    /**
+     * ⭐⭐ The whole run's progress, the ONE number the run bar, the output page's ring and the shade all draw (item 88,
+     * [RunProgress]). [elapsedMs] is since [startedAtMs].
+     */
+    fun fraction(elapsedMs: Long): Float {
+        if (stepsDone && progressKey == null && step == null) return 1f
+        val origin = if (clockFromMs > 0L) clockFromMs - startedAtMs else 0L
+        return RunProgress.fraction(step, elapsedMs - origin, RunProgress.of(progressKey))
+    }
     val idle: Boolean get() = !running && lines.isEmpty() && totalMs == null
 
     /**
@@ -165,7 +190,7 @@ data class RunLogState(
      * the user, 2026-10-10).
      */
     val stepLabel: String?
-        get() = step?.takeIf { it.second > 0 }?.let { (s, t) ->
+        get() = step?.takeIf { it.second > 0 && !preparing }?.let { (s, t) ->
             // ⭐ A phase counts real things (frames), so it says how many: "pose 12/49".
             phase?.let { "$it $s/$t" }
                 ?: askedSteps?.takeIf { it + 1 == t && s <= it }?.let { "$s/$it · ${s * 100 / t}%" }
@@ -433,6 +458,8 @@ fun RunLogPanel(
                 when {
                     // ⚠ A percentage, not "step n/m" -- see [RunLogState.step].
                     state.now != null && state.stepLabel != null -> "${state.now}  ${state.stepLabel}"
+                    // ⭐ Item 88: a sampler loading and reading its prompt says so, rather than "0/8 · 0%" for 13 s.
+                    state.now != null && state.preparing -> "${state.now}  ${stringResource(R.string.run_preparing)}"
                     state.now != null -> "${state.now}…"
                     // ⚠⚠ **A run that has STARTED but has no node yet is not
                     // "done".** `now` is null both before the first node begins
@@ -542,18 +569,13 @@ fun RunLogPanel(
         // which at 0.4x is a smear. ⚠ Indeterminate when a node is running but
         // reporting no steps: `vae_decode` takes 2 s on SDXL and has nothing to
         // count, and a bar pinned at 0% for two seconds looks like a stall.
+        // ⭐⭐ Item 88 (the user, 2026-11-19): ONE determinate bar for the whole run ([RunLogState.fraction]), no
+        // indeterminate sweep (a tester read it as a jump to 80 %).
         if (state.running) {
-            val p = state.step
-            if (p != null && p.second > 0) {
-                LinearProgressIndicator(
-                    progress = { p.first.toFloat() / p.second },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                )
-            } else {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                )
-            }
+            LinearProgressIndicator(
+                progress = { state.fraction(elapsed) },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+            )
         }
 
         // ⚠ Newest LAST, so the panel reads downwards like a log and the line

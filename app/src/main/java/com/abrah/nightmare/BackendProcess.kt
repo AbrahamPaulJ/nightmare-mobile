@@ -902,6 +902,8 @@ object BackendProcess {
         memoryBudget: String? = null,
         /** ⭐ [ContextKey.npu]: no GPU route for this launch, whatever the setting. */
         npu: Boolean = false,
+        /** ⭐ [ContextKey.flowShift]: the node's own shift, over the model's. */
+        flowShift: String? = null,
     ): Start =
         // ⚠⚠ [launchLock] for the whole launch: the API, OpService and the UI all reach here, and two starts at
         // once orphaned one (A won the port; B's monitor cleared `process` and the key for A, so A was never held,
@@ -1117,8 +1119,8 @@ object BackendProcess {
                                 ?.let { put("NM_DIT_CLIP_L", it.absolutePath) }
                             put("NM_DIT_BACKEND", FLUX1_BACKEND)
                         }
-                        // ⭐ A model's own flow shift ([ModelSpec.flowShift]).
-                        spec?.flowShift?.let { put("NM_DIT_FLOW_SHIFT", it) }
+                        // ⭐ A model's own flow shift ([ModelSpec.flowShift]), or the node's (GitHub #129).
+                        (flowShift ?: spec?.flowShift)?.let { put("NM_DIT_FLOW_SHIFT", it) }
                         // ⭐ Weights kept between renders, and Spectrum where it is turned on ([ditSpeedEnv]).
                         if (!diagnosing) putAll(ditSpeedEnv(spec, DeviceProbe.caps().ramBytes, Prefs.ditSpectrum))
 
@@ -1269,7 +1271,7 @@ object BackendProcess {
                 // ⚠ Null for an upscale-only process: it holds no checkpoint, so
                 // there is no context key and nothing for the readout to name.
                 launchedKey = if (upscalerOnly) null else ContextKey(
-                    ModelCatalog.backendTypeOf(modelId), modelId, res.width, res.height, memoryBudget, npu,
+                    ModelCatalog.backendTypeOf(modelId), modelId, res.width, res.height, memoryBudget, npu, flowShift,
                 )
                 upscalerServer = upscalerOnly
                 appContext = context.applicationContext
@@ -1421,6 +1423,12 @@ object BackendProcess {
         val caps = DeviceProbe.caps()
         if (!caps.known || caps.arch >= ModelCatalog.DIT_MIN_ARCH) return null
         return DeviceProbe.learnDitMapLimit(ctx, launchedDitBudget)
+    }
+
+    /** ⭐ A block needed more than the learned cap ([DeviceProbe.liftDitMapCap]); the changed budget relaunches. */
+    fun liftDitMapCap(needMb: Double): String? {
+        val ctx = appContext ?: return null
+        return DeviceProbe.liftDitMapCap(ctx, needMb)
     }
 
     /** ⚠ Pure: the smaller of a launch's own budget and what this phone taught us; [cap] alone stands in for no budget. */

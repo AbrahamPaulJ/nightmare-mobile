@@ -69,7 +69,16 @@ object H3Node : NodeType {
      * whole seconds: those skip the measured 1.6 s (39 frames), the longest 1152x640 holds, and land on 2.3 s, which it
      * does not.
      */
-    val LENGTHS: List<Int> = (1..7).map { 17 * it + 5 }
+    val LENGTHS: List<Int> = (1..7).map { 17 * it + 5 } + 243
+
+    /** The longest of the everyday lengths (5.2 s); past it is the 10 s clip ([LONG_MAX_AREA]). */
+    const val SHORT_MAX_FRAMES = 124
+
+    /**
+     * ⭐ 10.1 s (243 frames) only at 384x384 or smaller, and only on 8 Elite or newer (the user, 2026-11-18): a tester
+     * found one 10 s clip at 384² faster than two 5 s parts. 10,368 tokens, past the 8,800 ceiling every other size keeps.
+     */
+    const val LONG_MAX_AREA = 384L * 384
 
     /** ⚠ Pure: a length in seconds as its chip shows it, "3.0" for 73 frames. */
     fun label(frames: Int): String = String.format(java.util.Locale.ROOT, "%.1f", frames / WanVideoNode.H3.fps.toDouble())
@@ -106,8 +115,8 @@ object H3Node : NodeType {
      * of [LENGTHS]: 0.9 s 22 frames, 1.6 s 39, 3.0 s 73, 5.2 s 124; whole seconds land on 22, 56, 73, 90, 124.
      */
     fun framesFor(seconds: Double): Int {
-        val k = Math.round((seconds * WanVideoNode.H3.fps - 5) / 17.0).toInt().coerceIn(1, LENGTHS.size)
-        return 17 * k + 5
+        val want = seconds * WanVideoNode.H3.fps
+        return LENGTHS.minBy { kotlin.math.abs(it - want) }
     }
 
     fun framesFor(seconds: Int): Int = framesFor(seconds.toDouble())

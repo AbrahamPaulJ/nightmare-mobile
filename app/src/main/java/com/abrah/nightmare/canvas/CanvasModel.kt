@@ -1155,6 +1155,7 @@ private val KNOB_OVERRIDES = mapOf(
 
 internal val KNOB_RESOURCES = mapOf(
     "cfg" to com.abrah.nightmare.R.string.knob_cfg,
+    "shift" to com.abrah.nightmare.R.string.knob_shift,
     "loras" to com.abrah.nightmare.R.string.knob_loras,
     "out_w" to com.abrah.nightmare.R.string.knob_output_width,
     "out_h" to com.abrah.nightmare.R.string.knob_output_height,

@@ -21,9 +21,11 @@ class H3NodeTest {
     fun framesSitOnTheSeventeenPlusFiveGrid() {
         assertEquals(listOf(22, 56, 73, 90, 124), (1..5).map { H3Node.framesFor(it) })
         for (s in 1..5) assertEquals(0, (H3Node.framesFor(s) - 5) % 17)
-        // ⚠ Clamped: 0 s would be a still, which H3 does not make; past 5 s is past 124 frames.
+        // ⚠ Clamped: 0 s would be a still, which H3 does not make; past 10 s is past 243 frames (the 10 s length).
         assertEquals(22, H3Node.framesFor(0))
-        assertEquals(124, H3Node.framesFor(9))
+        assertEquals(124, H3Node.framesFor(7))
+        assertEquals(243, H3Node.framesFor(9))
+        assertEquals(243, H3Node.framesFor(20))
         assertEquals(73, WanVideoNode.framesOf(Node("v", H3Node.name, mapOf("seconds" to "3")), mapOf("seconds" to "3")))
         assertEquals(73, WanVideoNode.framesFor(3, WanVideoNode.H3))
         // Wan's own grid is untouched.
@@ -46,7 +48,9 @@ class H3NodeTest {
 
     @Test
     fun theLengthsAreItsLatentSteps() {
-        assertEquals(listOf("0.9", "1.6", "2.3", "3.0", "3.8", "4.5", "5.2"), H3Node.LENGTH_LABELS)
+        assertEquals(listOf("0.9", "1.6", "2.3", "3.0", "3.8", "4.5", "5.2", "10.1"), H3Node.LENGTH_LABELS)
+        assertEquals(124, H3Node.framesFor(6.0))
+        assertEquals(243, H3Node.framesFor(10.0))
         for (l in H3Node.LENGTH_LABELS) assertEquals(l, H3Node.label(H3Node.framesFor(l.toDouble())))
         assertEquals(56, H3Node.framesOf(emptyMap()))
         assertEquals("2.3", H3Node.widgets.first { it.name == "seconds" }.default)
@@ -79,6 +83,10 @@ class H3NodeTest {
         assertEquals("1.6", H3Node.lengthThatFits(1152, 640, ram, 79))
         assertEquals("0.9", H3Node.lengthThatFits(768, 1344, ram, 79))
         assertEquals("5.2", H3Node.lengthThatFits(384, 384, ram, 75))
+        // ⭐ 10 s: 384x384 or smaller, 8 Elite or newer (the user, 2026-11-18).
+        assertEquals("10.1", H3Node.lengthThatFits(384, 384, ram, 79))
+        assertEquals("5.2", H3Node.lengthThatFits(416, 384, ram, 79))
+        assertFalse(WanVideoNode.fitsTokens(384, 384, 243, 75, h3))
         assertEquals("2.3", H3Node.lengthThatFits(832, 480, ram, 75))
         // Wan has no token ceiling.
         assertTrue(WanVideoNode.fitsTokens(1280, 704, 121, 79, WanVideoNode.TURBO))

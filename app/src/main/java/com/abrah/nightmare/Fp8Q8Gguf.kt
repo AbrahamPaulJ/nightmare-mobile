@@ -22,6 +22,12 @@ import java.io.IOException
 object Fp8Q8Gguf {
 
     private const val F8 = "F8_E4M3"
+
+    /**
+     * The families it converts. ⭐ MOSS since item 86 (Saved #8177, the same vivo 8 Gen 3, 1.6.307): an fp8 Moody MOSS Mix
+     * stayed a safetensors and aborted in its first block (`ggml-cpu/ops.cpp:571`), the CPU fallback for fp8 below v79.
+     */
+    private val FAMILIES = setOf(Family.KREA2, Family.MOSS)
     private const val NATIVE_FP8_ARCH = 79
 
     /**
@@ -30,7 +36,7 @@ object Fp8Q8Gguf {
      * (`F8_E5M2` goes through [Fp8Widen] as before).
      */
     fun converts(head: CustomModels.DitHead, family: Family?, caps: DeviceProbe.Caps): Boolean =
-        !head.gguf && family == Family.KREA2 && caps.known && caps.qualcomm && caps.arch < NATIVE_FP8_ARCH &&
+        !head.gguf && family in FAMILIES && caps.known && caps.qualcomm && caps.arch < NATIVE_FP8_ARCH &&
             !MxFp8Gguf.converts(head) && !Int8Gguf.converts(head) && plainFp8(head.json)
 
     /** ⭐ fp8 matmul weights, and every tensor's dtype one the writer reads (the dropped U8 settings aside). */
@@ -50,13 +56,17 @@ object Fp8Q8Gguf {
     private fun isScale(name: String) = name.endsWith(".weight_scale") || name.endsWith(".scale_weight")
 
     internal fun rule(family: Family?): SafetensorsGguf.Rule = object : SafetensorsGguf.Rule() {
+        // ⭐ A MOSS GGUF is the layout [MossGguf] writes: the prefix off, its architecture named.
+        override val prefixes: List<String> get() = if (family == Family.MOSS) MossGguf.rule.prefixes else super.prefixes
+        override val kv: List<Pair<String, String>> get() = if (family == Family.MOSS) MossGguf.rule.kv else super.kv
         override val kvU32: List<Pair<String, Int>> get() = listOf("general.quantization_version" to 2, "general.file_type" to 7)
         override fun keep(name: String): Boolean = !name.endsWith(".comfy_quant") && name != "scaled_fp8"
-        override fun check(names: List<String>) {}
+        override fun check(names: List<String>) { if (family == Family.MOSS) MossGguf.rule.check(names) }
         override fun sourceShape(name: String, shape: LongArray): LongArray =
             if (isScale(name) && shape.size != 1) longArrayOf(shape.fold(1L) { a, b -> a * b }) else shape
         override fun type(name: String, outShape: LongArray, dtype: String): Int = when (dtype) {
             F8 -> if (outShape.size == 2 && outShape.last() % 32 == 0L &&
+                !(family == Family.MOSS && MossGguf.keepsF32(name)) &&
                 !GgufWiden.widens(family, MxFp8Gguf.key(name), "Q8_0", outShape.reversedArray())
             ) SafetensorsGguf.Q8_0 else SafetensorsGguf.F32
             "BF16" -> SafetensorsGguf.BF16

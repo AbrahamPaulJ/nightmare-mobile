@@ -73,6 +73,7 @@
     <string name="in_use">Используется</string>
     <string name="rename_node">Имя узла</string>
     <string name="run_starting">запуск…</string>
+    <string name="run_preparing">подготовка</string>
     <string name="cancel_run">Отмена</string>
     <string name="stop_run_title">Остановить запуск?</string>
     <string name="stop_run_body">Он идёт уже %1$s. Готовые узлы сохраняют результаты, и новый запуск продолжит с них.</string>
@@ -573,6 +574,8 @@
     <string name="results_import">Импорт картинок</string>
     <string name="results_imported">Импортировано %1$d из %2$d. Картинки без данных Nightmare пропущены.</string>
     <string name="flows_import_png_none">В этой картинке нет потока Nightmare. Он есть только в картинках, сохранённых с включённой записью.</string>
+    <string name="flows_import_png_foreign">Прочитано из картинки %1$s: %2$s. Она сделана моделью %3$s; этот поток использует модель, выбранную здесь.</string>
+    <string name="import_read_prompt">промпт</string>
     <string name="inspector_reference_size">Размер референса</string>
     <string name="inspector_reference">Референс</string>
     <string name="inspector_reference_hint">часть изображения, которую читает модель. Она не перерисовывается, сохраняет свою форму и не подгоняется под размер результата.</string>
@@ -774,6 +777,7 @@
     <string name="hint_only_masked_short">рендерить область вокруг маски: больше деталей там, где вы рисовали</string>
     <string name="hint_stitch_short">выкл.: результатом будет выбранный кадр; вкл.: он вставляется обратно в целое фото</string>
     <string name="hint_cfg_distilled">эти модели дистиллированы для 1. Выше 1 начинает читаться негативный промпт, а каждый шаг занимает примерно вдвое больше времени</string>
+    <string name="hint_flow_shift">Сдвиг потока. 0: собственный у модели (Z-Image 3, NitroFusion 2 6). Больше: больше шагов уходит на композицию, меньше: на мелкие детали. Изменение перезагружает модель, несколько секунд</string>
     <string name="hint_dit_size">любая сторона с шагом %1$d пикселей: без перезагрузки; большее изображение требует пропорционально больше времени</string>
     <string name="hint_dit_shape">ставит ширину и высоту под эту форму примерно того же размера. Ползунки ниже уточняют. Без перезагрузки</string>
     <string name="hint_fixed_sizes">только размеры, на которых обучена эта модель. На других картинка распадается на блоки. Без перезагрузки</string>
@@ -824,6 +828,7 @@
     <string name="wan_shape_differs">Картинка %1$s, другой формы, чем ролик %2$s: она будет обрезана.</string>
     <string name="wan_match_picture">Как у картинки (%1$s)</string>
     <string name="knob_cfg">CFG</string>
+    <string name="knob_shift">Сдвиг</string>
     <string name="knob_loras">LoRA</string>
     <string name="knob_output_width">Ширина результата</string>
     <string name="knob_output_height">Высота результата</string>
@@ -1418,6 +1423,7 @@
     <string name="sampling_fold">Сэмплер, зерно и CFG</string>
     <string name="sampling_seed_value">зерно %1$s</string>
     <string name="sampling_cfg_value">CFG %1$s</string>
+    <string name="sampling_shift_value">сдвиг %1$s</string>
     <string name="hint_wan14_seconds">Длина клипа в секундах, 16 кадров в секунду. От 1 до 3. 1 с при 720x1280 занимает около 12 минут на 8 Elite, и каждая следующая секунда дольше предыдущей: 3 с при 720p может занять час.</string>
     <string name="hint_wan13_seconds">Длина клипа в секундах, 16 кадров в секунду. От 0 до 5, 0 означает один кадр. 2 с при 832x480 занимают около 2 минут на 8 Elite, и каждая следующая секунда дольше предыдущей.</string>
     <string name="knob_smooth">Плавное движение</string>
@@ -1463,7 +1469,7 @@
     <string name="licence_read">Прочитать лицензию полностью</string>
     <string name="licence_accept">Принимаю, загрузить</string>
     <string name="hint_h3_size">384x384 быстрее всего. До 768x1344 пикселей по площади; чем больше размер, тем меньше секунд помещается (об этом скажет заметка ниже). Не меньше 384: в меньших роликах портятся цвета.</string>
-    <string name="hint_h3_seconds">Длина ролика в секундах, шагами самой H3: от 0,9 до 5,2 (от 22 до 124 кадров при 24 к/с). 3,0 в 384x384 занимают около 6 минут на 8 Elite; чем больше размер, тем короче самый длинный ролик.</string>
+    <string name="hint_h3_seconds">Длина ролика в секундах, шагами самой H3: от 0,9 до 5,2 (от 22 до 124 кадров при 24 к/с), и 10,1 в 384x384 и меньше на 8 Elite и новее. 3,0 в 384x384 занимают около 6 минут на 8 Elite; чем больше размер, тем короче самый длинный ролик.</string>
     <string name="hint_prompt_h3">MiniMax H3 читает промпт по разделам, как в примере: subject_definitions (кто в кадре и как звучит голос: S1 is a woman in her thirties with a calm, low voice), detailed_description (сцена, камера, длина и слова, сказанные вслух, как &lt;d&gt;[Russian] Привет.&lt;/d&gt;, на любом языке), overall_soundscape (звуки: дождь по стеклу) и non_diegetic_music (фоновая музыка или N/A, если не нужна). Напишите N/A в разделе, чтобы его пропустить. Обычный однострочный промпт тоже работает, без речи и музыки.</string>
     <!-- Heat on a video render (BatteryHeat.kt) -->
     <string name="heat_title">Нагрев</string>
@@ -1507,7 +1513,7 @@
     <string name="run_end_failed">Запуск не удался через %1$s</string>
     <string name="run_moss_layout">рендер по разметке</string>
     <string name="layout_tab">Разметка</string>
-    <string name="layout_note">Нарисуйте рамку для каждого предмета на картинке и опишите его. Промпт описывает всю картинку. Проведите по пустому месту, чтобы нарисовать рамку, перетащите рамку, чтобы сдвинуть, потяните точку, чтобы изменить размер.</string>
+    <string name="layout_note">Нарисуйте рамку для каждого предмета на картинке и опишите его. Промпт описывает всю картинку. Проведите по пустому месту, чтобы нарисовать рамку, перетащите рамку, чтобы сдвинуть, потяните точку в углу, чтобы изменить размер. Края прилипают к середине картинки и к другим рамкам.</string>
     <string name="layout_object">Предмет</string>
     <string name="layout_character">Персонаж</string>
     <string name="layout_text">Текст</string>

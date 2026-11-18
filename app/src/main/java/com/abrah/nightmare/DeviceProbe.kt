@@ -184,7 +184,14 @@ object DeviceProbe {
     fun loadHmxVerdict(context: Context) {
         val prefs = context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE)
         hmxBad = prefs.getBoolean(HMX_BAD_KEY, false)
-        ditMapCap = prefs.getString(DIT_MAP_CAP_KEY, null)
+        // ⚠⚠ Saved #8083, GitHub #123 (2026-11-15): three 8 Gen 3 phones had learned 1.25 GiB, below one block of Z-Image
+        // (1.52 GB) and Krea 2 (1.41 GB), so every DiT run failed in segment 1. A cap under today's floor is lifted to it.
+        ditMapCap = prefs.getString(DIT_MAP_CAP_KEY, null)?.let { stored ->
+            val v = stored.toDoubleOrNull()
+            if (v != null && v < DIT_MAP_FLOOR_GIB) DIT_MAP_FLOOR_GIB.toString().also {
+                prefs.edit().putString(DIT_MAP_CAP_KEY, it).apply()
+            } else stored
+        }
         packFallback = prefs.getInt(PACK_FALLBACK_KEY, 0).takeIf { it > 0 }
         packConfirmed = prefs.getInt(PACK_CONFIRMED_KEY, 0).takeIf { it > 0 }
     }
@@ -267,24 +274,65 @@ object DeviceProbe {
     var ditMapCap: String? = null
         internal set
 
-    /** ⚠ Pure: the budget after a map failure under [launched], or null when it cannot go lower. */
-    internal fun nextDitMapCap(launched: String?): String? {
+    /**
+     * ⚠ Pure: the budget after a map failure under [launched], or null when it cannot go lower. [needFloor] (GiB) is the
+     * biggest single block a lift was made for ([liftDitMapCap]): stepping under it again would only fail the other way.
+     */
+    internal fun nextDitMapCap(launched: String?, needFloor: Double = 0.0): String? {
         val v = launched?.toDoubleOrNull() ?: return null
-        if (v <= DIT_MAP_FLOOR_GIB) return null
-        return maxOf(v - DIT_MAP_STEP_GIB, DIT_MAP_FLOOR_GIB).toString()
+        val floor = maxOf(DIT_MAP_FLOOR_GIB, needFloor)
+        if (v <= floor) return null
+        return maxOf(v - DIT_MAP_STEP_GIB, floor).toString()
+    }
+
+    /**
+     * ⚠ Pure: the cap that fits a block needing [needMb] MB, or null when [cap] already holds it or there is no cap.
+     * The next step up from the floor that leaves 0.25 GiB over the block; past the top step the cap is dropped ("").
+     */
+    internal fun liftedDitMapCap(cap: String?, needMb: Double): String? {
+        val c = cap?.toDoubleOrNull() ?: return null
+        val need = needMb / 1024.0
+        if (need <= c) return null
+        var v = DIT_MAP_FLOOR_GIB
+        while (v < need + 0.25) v += DIT_MAP_STEP_GIB
+        return if (v > DIT_MAP_TOP_GIB) "" else v.toString()
+    }
+
+    /** The biggest block a lift was made for this session, GiB: [nextDitMapCap] does not step under it again. */
+    @Volatile
+    private var ditNeedFloor = 0.0
+
+    /**
+     * ⭐ The learned cap was smaller than one block of the model (the engine's "cannot make enough memory available …
+     * need X MB … budget"): raise it so that block fits ([liftedDitMapCap]). Returns the new budget ("" = no cap), or null.
+     */
+    fun liftDitMapCap(context: Context, needMb: Double): String? {
+        val next = liftedDitMapCap(ditMapCap, needMb) ?: return null
+        ditNeedFloor = maxOf(ditNeedFloor, needMb / 1024.0)
+        ditMapCap = next.ifEmpty { null }
+        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().apply {
+            if (next.isEmpty()) remove(DIT_MAP_CAP_KEY) else putString(DIT_MAP_CAP_KEY, next)
+        }.apply()
+        Log.w(TAG, "a DiT block needs ${needMb.toInt()} MB, over the learned cap: DiT budget ${next.ifEmpty { "uncapped" }} from now on")
+        return next
     }
 
     /** ⭐ Remembers [nextDitMapCap]. Repeating it for the same launch changes nothing. Returns the new budget, or null. */
     fun learnDitMapLimit(context: Context, launched: String?): String? {
-        val next = nextDitMapCap(launched) ?: return null
+        val next = nextDitMapCap(launched, ditNeedFloor) ?: return null
         ditMapCap = next
         context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().putString(DIT_MAP_CAP_KEY, next).apply()
         Log.w(TAG, "the NPU refused a mapping on ${soc()}: DiT budget $next GiB from now on (was $launched)")
         return next
     }
 
-    /** ⚠ Below about this, one block's weights and compute no longer fit (Klein 9B's own budget on v73 is 1.5). */
-    private const val DIT_MAP_FLOOR_GIB = 1.25
+    /**
+     * ⚠ Below this, one block no longer fits: Z-Image's prelude needs 1.52 GB at 1024², a Krea 2 block 1.41 GB (it was 1.25
+     * and stranded three 8 Gen 3 phones, Saved #8083 / GitHub #123). A model's own smaller budget still wins
+     * ([BackendProcess.cappedDitBudget]: Klein 9B's v73 1.5): this floors only what a phone LEARNS.
+     */
+    internal const val DIT_MAP_FLOOR_GIB = 1.75
+    private const val DIT_MAP_TOP_GIB = 2.75
     private const val DIT_MAP_STEP_GIB = 0.5
     private const val DIT_MAP_CAP_KEY = "dit_map_cap_gib"
 

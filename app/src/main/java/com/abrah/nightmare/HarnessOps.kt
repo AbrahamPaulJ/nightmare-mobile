@@ -5574,6 +5574,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         when (val r = BackendProcess.start(
             ctx, modelId = modelId, port = Backend.PORT, res = res,
             upscalerOnly = upscalerOnly, memoryBudget = want?.memoryBudget, npu = want?.npu == true,
+            flowShift = want?.flowShift,
         )) {
             is BackendProcess.Start.Failed -> {
                 say("start failed. ${r.why}", bad = true)

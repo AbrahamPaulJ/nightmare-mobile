@@ -124,6 +124,47 @@ object InpaintPixels {
     }
 
     /**
+     * ⭐ GitHub #128: a picture with see-through parts keeps them where nothing was repainted. The frame the model sees is
+     * drawn over black ([CropNode.render]), so without this every transparent pixel came back black.
+     *
+     * [out] takes, per pixel, the larger of [photo]'s own alpha (placed at [photoAt]; [opaqueAt], the padding the run
+     * filled, counts as opaque) and the repainted area ([patchMask], white = repainted, placed at [dst]). A photo with no
+     * transparent pixel returns [out] untouched.
+     */
+    fun keepTransparency(out: Bitmap, photo: Bitmap, photoAt: RectF, opaqueAt: RectF?, patchMask: Bitmap, dst: RectF): Bitmap {
+        if (!seeThrough(photo)) return out
+        val layer = Bitmap.createBitmap(out.width, out.height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(layer)
+        opaqueAt?.let { c.drawRect(it, Paint().apply { color = android.graphics.Color.WHITE }) }
+        // SRC: inside the photo its alpha REPLACES the opaque padding underneath.
+        c.drawBitmap(photo, null, photoAt, Paint(Paint.FILTER_BITMAP_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) })
+        // The repainted area, its brightness as alpha, over the top: max-like (m + a(1 - m)).
+        val toAlpha = android.graphics.ColorMatrix(floatArrayOf(
+            0f, 0f, 0f, 0f, 255f,
+            0f, 0f, 0f, 0f, 255f,
+            0f, 0f, 0f, 0f, 255f,
+            0.299f, 0.587f, 0.114f, 0f, 0f,
+        ))
+        c.drawBitmap(patchMask, null, dst, Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = android.graphics.ColorMatrixColorFilter(toAlpha) })
+        val kept = if (out.isMutable) out else out.copy(Bitmap.Config.ARGB_8888, true)
+        kept.setHasAlpha(true)
+        Canvas(kept).drawBitmap(layer, 0f, 0f, Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN) })
+        layer.recycle()
+        return kept
+    }
+
+    /** ⚠ Whether any pixel is not fully opaque; a row at a time, stopping at the first. */
+    internal fun seeThrough(photo: Bitmap): Boolean {
+        if (!photo.hasAlpha()) return false
+        val row = IntArray(photo.width)
+        for (y in 0 until photo.height) {
+            photo.getPixels(row, 0, photo.width, 0, y, photo.width, 1)
+            if (row.any { (it ushr 24) != 0xFF }) return true
+        }
+        return false
+    }
+
+    /**
      * Blend alpha: opaque over the painted region, smoothstep falloff across the
      * band outside it, ramped to zero toward the selected edges. Computed small
      * and stretched by the caller's bilinear draw, which is what makes the ramp

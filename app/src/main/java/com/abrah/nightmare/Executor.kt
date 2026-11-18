@@ -1429,23 +1429,60 @@ object VaeDecodeNode : NodeType {
  * 8 Gen 3 refuses is not known. IP-Adapter's head runs on the CPU and LoRA rides in the UNet, so
  * neither needs that space.
  */
-internal fun npuSpaceRefused(body: String, log: Iterable<String>, died: Boolean = false, learn: () -> String? = { null }): String? {
+internal fun npuSpaceRefused(
+    body: String,
+    log: Iterable<String>,
+    died: Boolean = false,
+    lift: (needMb: Double) -> String? = { null },
+    learn: () -> String? = { null },
+): String? {
+    // ⚠⚠ Only THIS render's lines (after its `Req Rcvd`, like [LoraPartial]): a map failure earlier in the same launch
+    // lowered the budget again on a later death (GitHub #125, a SIGSEGV told "could not map").
+    val lines = log.toList()
+    val mine = lines.subList(lines.indexOfLast { it.contains("Req Rcvd") }.coerceAtLeast(0), lines.size)
+    // ⭐ The learned cap was too small for one block (Saved #8083, GitHub #123: 1.25 GiB against Z-Image's 1.52 GB
+    // prelude), so the run failed before mapping anything: lift it, and say so.
+    if ("DiT generation failed" in body) {
+        mine.firstNotNullOfOrNull { NEED_OVER_BUDGET.find(it) }?.let { m ->
+            val need = m.groupValues[1].toDouble()
+            if (need > m.groupValues[2].toDouble()) lift(need)?.let { cap ->
+                val now = if (cap.isEmpty()) "its full budget" else "$cap GiB"
+                return "the NPU budget this phone had learned was smaller than one block of this model " +
+                    "(${"%.2f".format(java.util.Locale.ROOT, need / 1024)} GB). It now runs with $now: press Run again [${body.take(80)}]"
+            }
+        }
+    }
     // ⭐ The DiT engine's form of the same wall: the DSP would not map more weights (the first 8 Gen 3
     // report, OnePlus SM8650, 2026-10-10 — `ggml-hex: HTP0 buffer mapping failed`).
     // ⚠⚠ GitHub #115: or the engine DIED of it (http -1, EOFException): a Fibo edit on an 8 Gen 3 failed twice at ~1 GB
     // and the budget was never lowered, because only the "DiT generation failed" body was matched.
-    if (("DiT generation failed" in body || died) && log.any { "buffer mapping failed" in it || "fastrpc_mmap failed" in it }) {
+    if (("DiT generation failed" in body || died) && mine.any { "buffer mapping failed" in it || "fastrpc_mmap failed" in it }) {
+        // ⚠⚠ GitHub #125 (S24 Ultra, NitroFusion 2, once in 15+): every block's WEIGHTS mapped; what failed was the last
+        // step's WORKING buffer (`ggml_gallocr_reserve_n_impl: failed to allocate HTP0 buffer of size 768937984`), and the
+        // engine then died (SIGSEGV). A smaller weights budget does not shrink that buffer: say what it was, learn nothing.
+        mine.firstNotNullOfOrNull { GALLOC_FAILED.find(it) }?.let { g ->
+            val mb = g.groupValues[1].toLong() / (1 shl 20)
+            return "this phone's NPU could not find $mb MB of working memory for this step, this time (the weights had " +
+                "loaded). Press Run again; if it keeps happening at this size, use a smaller canvas [${body.take(80)}]"
+        }
         // ⭐ Below v79 the phone learns its own ceiling (GitHub #97), so the next Run relaunches under it.
         learn()?.let { return "this phone's NPU could not map the model's weights. It now runs with a smaller budget ($it GiB), a little slower: press Run again [${body.take(80)}]" }
         return "this phone's NPU could not map the model's weights. Try a smaller canvas, and please " +
             "share this report (support below the 8 Elite is new) [${body.take(80)}]"
     }
     val m = Regex("""Failed init QNN model: (\w+)""").find(body) ?: return null
-    if (log.none { "Failed to find available PD" in it }) return null
+    if (lines.none { "Failed to find available PD" in it }) return null
     val what = if (m.groupValues[1] == "controlnet") "the ControlNet" else m.groupValues[1]
     return "this phone's NPU had no room for $what beside the model, and would not open a second " +
         "space for it. Run without it (LoRA and IP-Adapter still work) [${body.take(80)}]"
 }
+
+/** ggml's graph allocator could not get the step's working (compute) buffer on the NPU. */
+private val GALLOC_FAILED = Regex("""ggml_gallocr_reserve_n_impl: failed to allocate HTP0 buffer of size (\d+)""")
+
+/** The engine's `model manager cannot make enough memory available on HTP0: need X MB device / X MB budget, available … / Y MB budget`. */
+private val NEED_OVER_BUDGET =
+    Regex("""cannot make enough memory available on HTP0: need ([\d.]+) MB device / [\d.]+ MB budget, available [\d.]+ MB device / ([\d.]+) MB budget""")
 
 /** ⚠ Carries the backend's own words. Its error bodies name the real problem. */
 class OpFailure(op: String, val code: Int, val body: String) :
@@ -1473,7 +1510,7 @@ class OpFailure(op: String, val code: Int, val body: String) :
  * engine left a real error, that error leads.
  */
 internal fun explainOpFailure(code: Int, body: String): String {
-    npuSpaceRefused(body, BackendProcess.newestLaunch(), died = code == -1, learn = BackendProcess::learnDitMapLimit)?.let { return it }
+    npuSpaceRefused(body, BackendProcess.newestLaunch(), died = code == -1, lift = BackendProcess::liftDitMapCap, learn = BackendProcess::learnDitMapLimit)?.let { return it }
     if (code != -1) return body
     // ⚠⚠ A backend that just died is still "running" for a few ms after its
     // socket closed ([BackendProcess.awaitExit]); deciding at that instant is

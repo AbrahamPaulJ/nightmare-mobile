@@ -1190,6 +1190,30 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      * create a file the library then refuses to show — and a clash gets a
      * suffix rather than silently overwriting someone's work.
      */
+    /**
+     * ⭐ GitHub #133: Text to image on the selected model, with a ComfyUI / A1111 picture's values ([PictureParams]).
+     * The size only on a DiT model, on its 64 px grid; an SD checkpoint keeps the size its launch is bound to.
+     */
+    private fun pictureParamsFlow(r: com.abrah.nightmare.canvas.PictureParams.Read): com.abrah.nightmare.canvas.Workflow {
+        val spec = SelectedModel.spec
+        val grid: ((Int) -> Int)? = if (spec.isDit) { v -> ((v + 32) / 64 * 64).coerceIn(512, 2048) } else null
+        return com.abrah.nightmare.canvas.PictureParams.apply(
+            com.abrah.nightmare.canvas.defaultWorkflow(), r, ModelCatalog.schedulersFor(spec.family), grid,
+        )
+    }
+
+    /** ⭐ What was read from a ComfyUI / A1111 picture, and the model it was made with, which may not be here. */
+    private fun pictureParamsLine(r: com.abrah.nightmare.canvas.PictureParams.Read): String =
+        text(
+            R.string.flows_import_png_foreign, r.from,
+            listOfNotNull(
+                r.prompt?.let { text(R.string.import_read_prompt) },
+                r.seed?.let { "seed $it" }, r.steps?.let { "$it steps" }, r.cfg?.let { "cfg ${LoraSpec.number(it)}" },
+                r.loras.takeIf { it.isNotEmpty() }?.let { "LoRA: " + it.joinToString { e -> e.name } },
+            ).joinToString(", "),
+            r.model ?: "?",
+        )
+
     fun importWorkflow(uri: android.net.Uri) {
         val ctx = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -1197,15 +1221,25 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: throw java.io.IOException("could not read that file")
                 // ⭐ GitHub #106: a picture Nightmare saved carries its flow ([PngInfo]); its flow is what is imported.
+                var foreign: com.abrah.nightmare.canvas.PictureParams.Read? = null
                 val text = if (bytes.size > 8 && bytes[1] == 'P'.code.toByte() && bytes[2] == 'N'.code.toByte()) {
-                    PngInfo.read(bytes.inputStream())[PngInfo.NIGHTMARE]
+                    val chunks = PngInfo.read(bytes.inputStream())
+                    chunks[PngInfo.NIGHTMARE]
                         ?.let { org.json.JSONObject(it).optString("flow").takeIf { f -> f.isNotBlank() } }
-                        ?: throw java.io.IOException(ctx.getString(R.string.flows_import_png_none))
+                        ?: run {
+                            // ⭐ GitHub #133: a ComfyUI or A1111 picture opens as Text to image with its values.
+                            foreign = com.abrah.nightmare.canvas.PictureParams.of(chunks)
+                                ?: throw java.io.IOException(ctx.getString(R.string.flows_import_png_none))
+                            null
+                        }
                 } else bytes.decodeToString()
                 // ⚠ Parsed BEFORE anything is written. A malformed file must
                 // fail as "this is not a workflow", not as a broken entry in
                 // the library that fails again every time it is opened.
-                val loaded = com.abrah.nightmare.canvas.workflowFromJson(text)
+                val loaded = foreign?.let { r ->
+                    com.abrah.nightmare.canvas.LoadedWorkflow(pictureParamsFlow(r), emptyList(), notes = listOf(pictureParamsLine(r)))
+                }
+                    ?: com.abrah.nightmare.canvas.workflowFromJson(text!!)
                 val base = (uriDisplayName(uri) ?: "imported")
                     .substringBeforeLast('.')
                     .replace(Regex("[^A-Za-z0-9 _-]"), " ")
@@ -9224,9 +9258,11 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 if (!log.running) { RunNotice.clear(app); continue }
                 val ms = android.os.SystemClock.elapsedRealtime() - log.startedAtMs
                 if (ms < RunNotice.SHOW_AFTER_MS) continue
-                val frac = log.step?.takeIf { it.second > 0 }?.let { (s, t) -> s.toFloat() / t }
+                // ⭐ The run bar's own number (item 88, [com.abrah.nightmare.canvas.RunLogState.fraction]).
+                val frac = log.fraction(ms)
                 val title = log.now?.let { app.getString(R.string.run_notice_title, it) } ?: app.getString(R.string.run_notice_running)
-                RunNotice.progress(app, title, RunNotice.textFor(log.stepLabel, ms), frac)
+                val label = log.stepLabel ?: if (log.preparing) app.getString(R.string.run_preparing) else null
+                RunNotice.progress(app, title, RunNotice.textFor(label, ms), frac)
             }
         }
     }
@@ -9275,12 +9311,41 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
     private fun noteNodeRun(n: NodeRun) {
         canvasStatus[n.id] = NodeStatus(outcome = n.outcome, detail = n.detail)
         if (n.outcome == Outcome.RAN) nodeMs[n.id] = n.ms
-        runLog = runLog.copy(
-            lines = runLog.lines +
+        // ⭐ Item 88: a node that counted steps teaches [RunProgress] its split, and the next node's clock starts now.
+        val log = runLog
+        val clock = android.os.SystemClock.elapsedRealtime()
+        val stepped = log.prepMs != null
+        if (stepped && n.outcome == Outcome.RAN) {
+            com.abrah.nightmare.canvas.RunProgress.record(log.progressKey, log.prepMs!!, clock - log.clockOrigin())
+        }
+        runLog = log.copy(
+            lines = log.lines +
                 com.abrah.nightmare.canvas.runLineOf(logName(n.id), n.outcome, n.ms, humanized(n.detail)),
             now = null,
             step = null,
+            progressKey = null,
+            prepMs = null,
+            clockFromMs = if (stepped) clock else log.clockFromMs,
+            stepsDone = log.stepsDone || stepped,
         )
+    }
+
+    /** ⭐ A node begins: named in the run log, and the model [RunProgress] learns its bar under (samplers only). */
+    private fun logNodeStart(id: String) {
+        val node = canvas.workflow.graph.byId[id]
+        val key = node?.takeIf { isSampler(it.type) }?.let { n ->
+            (NODE_TYPES[n.type]?.effectiveParams(n) ?: n.params)["model"]?.takeIf { it.isNotBlank() } ?: n.type
+        }
+        runLog = runLog.copy(now = logName(id), step = null, phase = null, progressKey = key, prepMs = null)
+    }
+
+    /** ⭐ A node's step count; the first real step fixes how long it prepared (item 88). */
+    private fun logProgress(id: String, step: Int, total: Int) {
+        val log = runLog
+        val prep = log.prepMs ?: if (step >= 1 && log.progressKey != null) {
+            android.os.SystemClock.elapsedRealtime() - log.clockOrigin()
+        } else null
+        runLog = log.copy(now = logName(id), step = step to total, askedSteps = askedStepsOf(id), prepMs = prep)
     }
 
     fun clearRunLog() { runLog = com.abrah.nightmare.canvas.RunLogState() }
@@ -9429,13 +9494,13 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             val r = ops.runWorkflow(
                 canvas.workflow.copy(graph = graph),
                 onStart = { id, _ ->
-                    runLog = runLog.copy(now = logName(id), step = null, phase = null)
+                    logNodeStart(id)
                     CrashReport.stage(getApplication(), id)
                 },
                 onNode = ::noteNodeRun,
                 onProgress = { id, step, total ->
                     canvasStatus[id] = NodeStatus(progress = step to total)
-                    runLog = runLog.copy(now = logName(id), step = step to total, askedSteps = askedStepsOf(id))
+                    logProgress(id, step, total)
                 },
                 onPhase = { _, ph -> if (runLog.phase != ph) runLog = runLog.copy(phase = ph) },
                 // ⚠ Once per SWEEP per sentence: eight runs refusing the same
@@ -9713,7 +9778,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             // ⭐ Named before it runs, so a 24 s sampler is a node with a name
             // rather than a frozen screen.
             onStart = { id, _ ->
-                runLog = runLog.copy(now = logName(id), step = null, phase = null)
+                logNodeStart(id)
                 // ⭐ Which node, and the RAM free as it starts: survives a phone restart ([CrashReport.stage]).
                 CrashReport.stage(getApplication(), id)
             },
@@ -9740,7 +9805,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             },
             onProgress = { id, step, total ->
                 canvasStatus[id] = NodeStatus(progress = step to total)
-                runLog = runLog.copy(now = logName(id), step = step to total, askedSteps = askedStepsOf(id))
+                logProgress(id, step, total)
             },
             onPhase = { _, ph -> if (runLog.phase != ph) runLog = runLog.copy(phase = ph) },
             // ⭐⭐ A long node's own narration, live in the panel.
@@ -10282,6 +10347,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                         // here and the next Run is the GPU or CPU route, said in the run log, not left for Settings.
                         if (Prefs.v69Npu && BackendProcess.belowDitNpu(DeviceProbe.caps())) {
                             Prefs.setLowRam(getApplication(), Prefs.KEY_V69_NPU, false)
+                            // ⚠ GitHub #104 retest: the switch WAS off, but Settings draws [lowRam], which only
+                            // [chooseLowRam] refreshed, so it still showed on ("switch not turn off itself").
+                            lowRam = Prefs.lowRam(getApplication())
                             say(text(R.string.run_v69_npu_off), bad = true)
                         }
                     }
