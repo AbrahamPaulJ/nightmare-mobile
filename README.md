@@ -1,7 +1,7 @@
 # Nightmare Mobile
 
 **ComfyUI-style image and video generation on an Android phone, running on the Snapdragon NPU.**
-FLUX.2, Z-Image, Qwen Image, SDXL, Ideogram 4, Wan 2.2 video and 50 more models, as a node graph made for
+FLUX.2, Z-Image, Qwen Image, SDXL, Ideogram 4, Wan 2.2 video and 51 more models, as a node graph made for
 touch. No server, no account, no cloud.
 
 **[Download the APK](https://github.com/AbrahamPaulJ/nightmare-mobile/releases/latest)** ·
