@@ -1524,7 +1524,9 @@ class SdSampler(
         // caption, or a layout pasted into the prompt. ⚠ A layout that cannot compile stops the run with why, never
         // renders as if there were none.
         val laid = if (family != Family.MOSS) null else try {
-            MossLayout.forRender(node.params[MossLayout.PARAM], pos.text, w, h)
+            // ⚠ The node's boxes on text to image only (the user, 2026-11-19): with a photo wired, image to image or
+            // inpaint, they are left out, as the Layout tab is hidden. A layout pasted into the prompt is the prompt.
+            MossLayout.forRender(node.params[MossLayout.PARAM].takeIf { inputs["image"] == null }, pos.text, w, h)
         } catch (e: IllegalArgumentException) {
             throw IllegalArgumentException("node \"${node.id}\": ${e.message}")
         }

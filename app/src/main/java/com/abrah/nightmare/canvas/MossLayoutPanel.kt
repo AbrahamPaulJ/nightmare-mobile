@@ -70,7 +70,7 @@ import com.abrah.nightmare.ui.dangerOutlinedColors
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun MossLayoutPanel(param: String?, w: Int, h: Int, photo: ImageBitmap? = null, onSave: (String) -> Unit) {
+internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) -> Unit) {
     var layout by remember(param) { mutableStateOf(MossLayout.read(param)) }
     var selected by remember { mutableIntStateOf(-1) }
     var clearing by remember { mutableStateOf(false) }
@@ -82,7 +82,7 @@ internal fun MossLayoutPanel(param: String?, w: Int, h: Int, photo: ImageBitmap?
     )
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.layout_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LayoutCanvas(layout, selected, w, h, photo, onSelect = { selected = it }, onDone = { commit(it) })
+        LayoutCanvas(layout, selected, w, h, onSelect = { selected = it }, onDone = { commit(it) })
         // ⚠ A FlowRow: on a narrow phone a button moves to a second line whole instead of its label wrapping (the user,
         // 2026-11-19: Clear came out as "Cle / ar"). Destructive before the add, as every row orders them.
         androidx.compose.foundation.layout.FlowRow(
@@ -175,7 +175,6 @@ private fun LayoutCanvas(
     selected: Int,
     w: Int,
     h: Int,
-    photo: ImageBitmap?,
     onSelect: (Int) -> Unit,
     onDone: (MossLayout.Layout) -> Unit,
 ) {
@@ -300,9 +299,6 @@ private fun LayoutCanvas(
                     }
                 },
         ) {
-            // ⭐ The picture the boxes are drawn over: the input photo as the Crop tab frames it (the user, 2026-11-19:
-            // "we can't see the pic in the background"). None for text to image, where the frame is all there is.
-            photo?.let { drawImage(it, dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt())) }
             (live ?: layout).boxes.forEachIndexed { i, b ->
                 val col = layoutColor(b.label)
                 val tl = Offset((b.x1 * size.width).toFloat(), (b.y1 * size.height).toFloat())

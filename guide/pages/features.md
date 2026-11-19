@@ -62,8 +62,8 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
 - **MOSS-Image Layout**: every MOSS node has a **Layout** tab: draw a box for each thing in the picture and say what
   it is (an object, a character, or text with its exact words), and MOSS puts it there. A layout from ComfyUI's
   MOSS Layout Prompt node can be pasted into the prompt instead. Boxes resize from any corner, snap to the picture's
-  middle and to each other, take their position and size typed in pixels, and the tab has Undo and Redo. When the
-  node edits a photo, the boxes are drawn over it, framed as the Crop tab frames it.
+  middle and to each other, take their position and size typed in pixels, and the tab has Undo and Redo. Text to
+  image only: with a photo wired in, the tab is hidden and the boxes are not used.
 - **FLUX.3 Image Klein** (16 steps): Black Forest Labs' newest model (5.6B), sharp detail, good prompt following and readable text. About 45 s at 512x512 and 2 min at 1024x1024 on an 8 Elite; also on the 8 Gen 3. About 6.2 GB, or 3.9 GB beside Krea 2 Turbo, whose text encoder it shares. Text to image, and Image edit (a photo and a prompt). FLUX Kommunity License.
 - **Fibo 2.0 Edit Turbo** (4 steps): Bria's 8B editor. Wire a picture into the Image edit flow and say what to change; the rest of the picture stays, and it writes text on signs. With no picture it makes one from the prompt alone, in about a minute at 896x1600. About 8.4 GB. 8 Gen 3 or newer and 12 GB of RAM. About 1 min at 512x512 on an 8 Elite. Non-commercial.
 - **Ideogram 4** (8 steps): Ideogram's 9.3B model, the best open model at readable text in a picture (signs, posters, labels), with ostris' TurboTime speed-up applied every time. About 5.5 min at 768x768 on an 8 Elite. About 11.6 GB, 12 GB phones and up. Text to image. Non-commercial use only (Ideogram's licence).

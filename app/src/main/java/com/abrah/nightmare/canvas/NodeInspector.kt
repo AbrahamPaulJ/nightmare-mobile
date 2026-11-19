@@ -2470,26 +2470,14 @@ internal fun NodeInspectorBody(
             }
         }
         // ⭐⭐ A MOSS sampler's Layout tab (GitHub #77): boxes on the picture, compiled into its prompt ([com.abrah.nightmare.MossLayout]).
-        val layoutTile = if (node.type != com.abrah.nightmare.SdSampler.MOSS.name) null else {
+        // ⚠ Text to image only (the user, 2026-11-19): with a photo wired the boxes are not sent ([SdSampler.run]).
+        val layoutTile = if (node.type != com.abrah.nightmare.SdSampler.MOSS.name || node.inputs["image"] != null) null else {
             val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
             val lw = live["width"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
             val lh = live["height"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
             val param = node.params[com.abrah.nightmare.MossLayout.PARAM]
             mossLayoutTile(param, lw, lh) {
-                // ⭐ The photo under the boxes, framed as the Crop tab frames it and the sampler will see it: the mask
-                // tab's own cut ([CropNode.render], off the main thread, re-cut when the crop changes).
-                // ⚠ Not `keep`: the cut lives while the Layout window is open and goes with it (the user, 2026-11-19);
-                // reopening re-cuts it, the plain photo showing for that moment.
-                val framedPhoto = cropSource?.let { raw ->
-                    val rect = cropRectOf(node)
-                    val outSize = framingOutSize(node, type)
-                    val fill = effectivePad(node, type)
-                    rememberOffMain(node.id, "layout source", raw, rect, outSize, fill) {
-                        val (outW, outH) = outSize
-                        CropNode.render(raw.asAndroidBitmap(), rect.x, rect.y, rect.w, rect.h, outW, outH, fill).first.asImageBitmap()
-                    } ?: raw
-                }
-                MossLayoutPanel(param, lw, lh, framedPhoto) { onSetParam(nodeId, com.abrah.nightmare.MossLayout.PARAM, it) }
+                MossLayoutPanel(param, lw, lh) { onSetParam(nodeId, com.abrah.nightmare.MossLayout.PARAM, it) }
             }
         }
         // ⭐ The Default view's References row on a DiT edit (images 2 to 4); Advanced wires them ([ReferencesRow]).
