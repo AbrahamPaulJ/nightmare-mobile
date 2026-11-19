@@ -154,7 +154,11 @@ fun ResultsScreen(
     /** ⚠ Thumbnails are decoded lazily by the caller and may not be ready yet. */
     thumbnailFor: (String) -> ImageBitmap?,
     onOpenFlow: (Result) -> Unit,
-    onView: (Result) -> Unit,
+    /**
+     * ⭐ Open [Result] full screen, with the list the grid shows (Favourites and the filter applied): the one a swipe
+     * pages through. GitHub #137: a favourite's swipe ran on into pictures that were not favourites.
+     */
+    onView: (Result, List<Result>) -> Unit,
     onDelete: (Result) -> Unit,
     onDiskBytes: Long,
     modifier: Modifier = Modifier,
@@ -439,7 +443,7 @@ fun ResultsScreen(
                     )
                     Box(
                         Modifier.fillMaxSize().clickable {
-                            if (selecting) onToggleSelect(r) else onView(r)
+                            if (selecting) onToggleSelect(r) else onView(r, items)
                         },
                     )
                 } else {
@@ -456,7 +460,7 @@ fun ResultsScreen(
                             modifier = Modifier
                                 .aspectRatio(bmp.width.toFloat() / bmp.height.coerceAtLeast(1))
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { if (selecting) onToggleSelect(r) else onView(r) },
+                                .clickable { if (selecting) onToggleSelect(r) else onView(r, items) },
                         )
                     } ?: run { if (unreadable(r.id)) UnreadablePicture() }
                 }
@@ -642,7 +646,7 @@ fun ResultsScreen(
                     // ⚠ Folded, there is no frame to show it in: a tap opens it full screen.
                     onClick = {
                         if (selecting) onToggleSelect(r)
-                        else { shownId = r.id; if (!frameShown) onView(r) }
+                        else { shownId = r.id; if (!frameShown) onView(r, items) }
                     },
                     onLongClick = { onToggleSelect(r) },
                 )

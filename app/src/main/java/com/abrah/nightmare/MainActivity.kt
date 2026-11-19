@@ -923,7 +923,7 @@ fun HarnessScreen(
                         onOpenFlow = { vm.openResultFlow(it.id) },
                         transferFor = vm::infoTransferFor,
                         diagnoseFor = vm::diagnoseFor,
-                        onView = { vm.viewResult(it) },
+                        onView = { r, shown -> vm.viewResult(r, shown) },
                         onDelete = { vm.deleteResult(it.id) },
                         onDiskBytes = vm.keptBytes,
                         selected = vm.selectedResults,

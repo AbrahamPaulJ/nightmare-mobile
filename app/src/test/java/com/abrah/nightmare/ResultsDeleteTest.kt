@@ -55,7 +55,7 @@ class ResultsDeleteTest {
                     results = results.toList(),
                     thumbnailFor = { thumb },
                     onOpenFlow = {},
-                    onView = {},
+                    onView = { _, _ -> },
                     onDelete = { r -> results.removeAll { it.id == r.id } },
                     onDiskBytes = 0,
                 )
@@ -101,7 +101,7 @@ class ResultsDeleteTest {
                     onFavouritesOnly = { favs = it },
                     thumbnailFor = { thumb },
                     onOpenFlow = {},
-                    onView = {},
+                    onView = { _, _ -> },
                     onDelete = {},
                     onDiskBytes = 0,
                 )
@@ -157,7 +157,7 @@ class ResultsDeleteTest {
                     results = results,
                     thumbnailFor = { thumb },
                     onOpenFlow = {},
-                    onView = { viewed += it.id },
+                    onView = { r, _ -> viewed += r.id },
                     onDelete = {},
                     onDiskBytes = 0,
                 )

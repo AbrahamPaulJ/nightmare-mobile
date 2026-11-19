@@ -8349,7 +8349,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun viewResult(r: com.abrah.nightmare.canvas.Result) {
+    fun viewResult(r: com.abrah.nightmare.canvas.Result, shown: List<com.abrah.nightmare.canvas.Result>? = null) {
         // ⭐ Kept: the fullscreen viewer has broken twice with nothing in any log
         // (`ResultsFullscreenTest`). `logcat -s NmViewer` says open/close and WHO closed.
         android.util.Log.i("NmViewer", "open ${r.id}")
@@ -8358,7 +8358,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         viewingResultDetails = emptyList()
         // ⭐ EVERY kept picture, in the grid's order (a series in its own order, where its tile sits), so a swipe
         // runs on past the end of a series (a tester, Saved #7304: it stopped there and sent him back to the grid).
-        val set = keptGroups.flatMap { it.items }.ifEmpty { listOf(r) }
+        // ⭐ …or the list the Results grid shows, Favourites and the filter applied (GitHub #137).
+        val set = (shown ?: keptGroups.flatMap { it.items }).ifEmpty { listOf(r) }
         viewingSet = set
         viewingIndex = set.indexOfFirst { it.id == r.id }.coerceAtLeast(0)
         // ⚠⚠ Off the main thread: `full()` decodes a PNG and `details()` reads

@@ -470,7 +470,7 @@ open class ModelsScreenshotTest {
                             groups = items.map { com.abrah.nightmare.canvas.ResultGroup(null, listOf(it)) },
                             results = items,
                             thumbnailFor = { thumbs[it] },
-                            onOpenFlow = {}, onView = {}, onDelete = {},
+                            onOpenFlow = {}, onView = { _, _ -> }, onDelete = {},
                             onDiskBytes = 42L shl 20,
                             selected = selected,
                         )

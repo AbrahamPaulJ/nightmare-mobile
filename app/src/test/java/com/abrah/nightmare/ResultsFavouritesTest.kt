@@ -16,6 +16,8 @@ import com.abrah.nightmare.canvas.ResultGroup
 import com.abrah.nightmare.ui.NightmareTheme
 import com.abrah.nightmare.ui.RESULT_THUMB_TAG
 import com.abrah.nightmare.ui.ResultsScreen
+import androidx.compose.ui.test.onNodeWithContentDescription
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,7 +53,7 @@ class ResultsFavouritesTest {
                     results = results.toList(),
                     thumbnailFor = { thumb },
                     onOpenFlow = {},
-                    onView = {},
+                    onView = { _, _ -> },
                     onDelete = {},
                     onDiskBytes = 0,
                     favouritesOnly = favouritesOnly,
@@ -80,5 +82,40 @@ class ResultsFavouritesTest {
             thumbs()[5].performClick()
             rule.waitForIdle()
         }
+    }
+
+    /**
+     * ⭐ GitHub #137: a favourite opened full screen swiped on into pictures that were not favourites, as the viewer
+     * paged through every kept picture. It pages through what the grid shows now.
+     */
+    @Test
+    fun aFavouriteOpensAmongFavouritesOnly() {
+        val results = (0 until 8).map { i ->
+            Result(id = "r$i", savedAt = 100L - i, seed = "$i", model = null, prompt = "p$i", width = 64, height = 64, favourite = i % 3 == 0)
+        }
+        val thumb = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).asImageBitmap()
+        var swipesThrough: List<String>? = null
+        rule.setContent {
+            NightmareTheme(darkTheme = true) {
+                ResultsScreen(
+                    groups = results.map { ResultGroup(null, listOf(it)) },
+                    results = results,
+                    thumbnailFor = { thumb },
+                    onOpenFlow = {},
+                    onView = { _, shown -> swipesThrough = shown.map { it.id } },
+                    onDelete = {},
+                    onDiskBytes = 0,
+                    favouritesOnly = true,
+                )
+            }
+        }
+        rule.waitForIdle()
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+        // Folded, a tap opens the picture full screen (open, it shows in the frame instead).
+        rule.onNodeWithContentDescription(app.getString(R.string.results_cd_fold_preview)).performClick()
+        rule.waitForIdle()
+        rule.onAllNodesWithTag(RESULT_THUMB_TAG)[1].performClick()
+        rule.waitForIdle()
+        assertEquals(listOf("r0", "r3", "r6"), swipesThrough)
     }
 }
