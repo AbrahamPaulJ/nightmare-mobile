@@ -46,7 +46,7 @@ Z-Image). The rest is Nightmare's own work, and every engine change is public in
 [`backend-patches/`](backend-patches/):
 
 - **Most of the models, brought to the phone here**: Qwen Image 2.1, Krea 2, Anima, MOSS-Image, Iris, Ideogram 4,
-  FLUX.3 Klein, Fibo 2.0 Edit and FLUX.1 dev, and all of the video: Wan 2.2 5B and 14B, motion transfer (Wan 2.2
+  FLUX.3 Klein, Fibo 2.0 Edit, FLUX.1 dev and MiniMax H3 Image, and all of the video: Wan 2.2 5B and 14B, motion transfer (Wan 2.2
   Fun Control) and MiniMax H3 with sound. Where the engine lacked a model or ran it wrong on the NPU, we ported or
   fixed it: 85 patches to stable-diffusion.cpp and ggml's Hexagon backend.
 - **A 14B video model on a 12 GB phone**: Wan 2.2 14B's two experts stream from storage instead of sitting in RAM.
@@ -75,7 +75,7 @@ pick it, and the app shows which ones your phone can run.
 | Snapdragon 888 and newer | SD 1.5 |
 | 8 Gen 1, 8+ Gen 1 | FLUX.2 Klein 4B and NitroFusion 2 on the GPU; Anima on the CPU (slow) |
 | 8 Gen 2, 8s Gen 3, 8s Gen 4 | Z-Image Turbo, NitroFusion 2, FLUX.2 Klein 4B and 9B, Anima Turbo, Iris (much slower on the 8s chips for now) |
-| 8 Gen 3 and newer | SDXL, Qwen Image 2.1, MOSS-Image, FLUX.3 Klein, Wan 2.2 video; Krea 2, Fibo 2.0 Edit and MiniMax H3 with 12 GB of RAM |
+| 8 Gen 3 and newer | SDXL, Qwen Image 2.1, MOSS-Image, FLUX.3 Klein, Wan 2.2 video; Krea 2, Fibo 2.0 Edit, MiniMax H3 and MiniMax H3 Image with 12 GB of RAM |
 | 8 Elite and newer | all of the above, plus Ideogram 4 (12 GB), FLUX.1 dev and Neodragon video |
 
 Without a Snapdragon (MediaTek Dimensity, Exynos, Google Tensor) Text to image and Image to image still run with

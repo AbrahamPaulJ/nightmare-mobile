@@ -129,8 +129,8 @@ class VideoGraphTest {
         assertTrue(isSampler("fibo2.sample"))
         // 2026-11-09: `flux1.sample`, FLUX.1 dev (`docs/IMPORTS.md`).
         assertTrue(isSampler("flux1.sample"))
-        assertEquals(33, SAMPLER_TYPES.size)  // 2026-10-29: `wan13.sample`, NSFW Wan 1.3B; `h3.sample`, MiniMax H3
-        assertEquals(27, IMAGE_SAMPLER_TYPES.size)
+        assertEquals(34, SAMPLER_TYPES.size)  // 2026-10-29: `wan13.sample`, NSFW Wan 1.3B; `h3.sample`, MiniMax H3; 2026-11-19 `h3image.sample`
+        assertEquals(28, IMAGE_SAMPLER_TYPES.size)  // + `h3image.sample`
         assertEquals(11, INPAINT_TYPES.size)
     }
 

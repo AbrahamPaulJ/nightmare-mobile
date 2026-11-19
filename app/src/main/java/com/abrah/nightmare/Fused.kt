@@ -765,6 +765,8 @@ class SdSampler(
         val FLUX3 = SdSampler("flux3.sample", Family.FLUX3, inpaint = false)
         /** ⭐ FLUX.1 dev (`docs/IMPORTS.md`) — text to image only until the rest is measured. */
         val FLUX1 = SdSampler("flux1.sample", Family.FLUX1, inpaint = false)
+        /** ⭐ MiniMax H3 Image (`docs/MINIMAX-H3.md` §7): text to image only, 6 steps on its own PDD sigmas. */
+        val H3IMAGE = SdSampler("h3image.sample", Family.H3IMAGE, inpaint = false)
         /** ⭐ FLUX.1 dev's catalogue steps; below it the run log says so ([fewFlux1Steps]). */
         const val FLUX1_MIN_STEPS = 20
         /** ⭐ Fibo 2.0 Edit Turbo (GH #69, `dit/056`): an editor, its picture the reference ([Family.edit]); no inpaint. */
@@ -806,7 +808,7 @@ class SdSampler(
         val FLUX2_INPAINT = SdSampler("flux2.inpaint", Family.FLUX2, inpaint = true)
 
         val ALL = listOf(
-            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS, MOSS, IDEOGRAM, FLUX3, FLUX1, FIBO2,
+            SD15, SD15_SWAP, SDXL, SDXL_SWAP, ANIMA, FLUX2, ZIMAGE, QWEN21, KREA2, ANIMA_DIT, IRIS, MOSS, IDEOGRAM, FLUX3, FLUX1, FIBO2, H3IMAGE,
             SD15_INPAINT, SD15_SWAP_INPAINT, SDXL_INPAINT, SDXL_SWAP_INPAINT, ANIMA_INPAINT,
             ZIMAGE_INPAINT, QWEN21_INPAINT, KREA2_INPAINT, ANIMA_DIT_INPAINT, MOSS_INPAINT, FLUX2_INPAINT,
         )
@@ -1364,7 +1366,7 @@ class SdSampler(
      * ControlNet pack), not Iris (no VAE to mask through) or Wan (a video).
      */
     private val offersDetail: Boolean
-        get() = !inpaint && family !in setOf(Family.IRIS, Family.WAN, Family.IDEOGRAM, Family.FLUX3, Family.FLUX1, Family.FIBO2)
+        get() = !inpaint && family !in setOf(Family.IRIS, Family.WAN, Family.IDEOGRAM, Family.FLUX3, Family.FLUX1, Family.FIBO2, Family.H3IMAGE)
 
     /** ⭐ True when [node] will run the detail pass: what the Run's up-front tool check asks. */
     internal fun detailWanted(node: Node): Boolean = offersDetail && effectiveParams(node).let { p ->
@@ -1391,7 +1393,7 @@ class SdSampler(
     private fun detailWidgets(): List<Widget> = listOfNotNull(
         // ⭐ On every sampler but Wan and Iris: it acts on image to image, inpaint and Fix faces / hands.
         Widget(MATCH_COLORS, "bool", "false", hintRes = R.string.hint_match_colours)
-            .takeIf { family != Family.WAN && family != Family.IRIS && family != Family.MOSS && family != Family.IDEOGRAM && family != Family.FLUX3 && family != Family.FLUX1 && family != Family.FIBO2 },
+            .takeIf { family != Family.WAN && family != Family.IRIS && family != Family.MOSS && family != Family.IDEOGRAM && family != Family.FLUX3 && family != Family.FLUX1 && family != Family.FIBO2 && family != Family.H3IMAGE },
     ) + if (!offersDetail) emptyList() else listOf(
         Widget(com.abrah.nightmare.detail.Detailer.FIX_FACES, "bool", "false", hintRes = R.string.hint_fix_faces),
         Widget(com.abrah.nightmare.detail.Detailer.FIX_HANDS, "bool", "false", hintRes = R.string.hint_fix_hands),

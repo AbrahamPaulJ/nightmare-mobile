@@ -456,6 +456,8 @@ internal fun ModelCardV2(
                         if (spec.isCustom && spec.ownLora != null) Badge(stringResource(R.string.mb_badge_8steps), MaterialTheme.colorScheme.primary)
                         // ⭐ Converted by a community member, hosted on their page ([ModelCatalog.communityModels]).
                         if (spec.community) Badge(stringResource(R.string.mb_sub_community), MaterialTheme.colorScheme.tertiary)
+                        // ⭐ MiniMax-H3-Image's licence asks for its name on the product, as H3's video card shows H3's.
+                        if (spec.family == com.abrah.nightmare.Family.H3IMAGE) Badge(stringResource(R.string.mb_powered_h3img))
                         if (row.fromLocalDream) Badge(stringResource(R.string.mb_local_dream), MaterialTheme.colorScheme.tertiary)
                     }
                 }

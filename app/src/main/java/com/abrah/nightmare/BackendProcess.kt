@@ -677,6 +677,8 @@ object BackendProcess {
         // ⚠⚠ Not Krea's thresholds: FLUX.1 holds its 3.4 GB T5 on the CPU beside the DiT. With 7.3 GB free it went whole, as
         // `segment 1/1`, and lmkd took the app 2 minutes in with no error (S25, 12 GB, 2026-11-09).
         if (spec?.family == Family.FLUX1 && ramBytes > 0) return if (availBytes >= FLUX1_WHOLE_FREE) null else "4"
+        // ⭐ MiniMax H3 Image: an 11.6 GB DiT, held by no phone, streams on every one ([H3_IMAGE_BUDGET]).
+        if (spec?.family == Family.H3IMAGE && ramBytes > 0) return H3_IMAGE_BUDGET
         // ⭐ Krea 2 on the 16 GB class too (Saved #7754, a 16 GB phone: whole took 7.9 GB free to 0.5, so ~7.4 GB):
         // whole only with 2 GB left after, the floor Fibo keeps (the user, 2026-11-04); else 5 or 4 GiB as below 16.
         if (spec?.family == Family.KREA2 && ramBytes >= Prefs.LOWRAM_BELOW_BYTES) return when {
@@ -711,6 +713,9 @@ object BackendProcess {
 
     /** ⭐ FLUX.1 whole: its 6.8 GB DiT, 3.4 GB T5 and 0.25 GB CLIP-L plus a 2 GB floor ([kreaBudget]). Reasoned, not measured. */
     private const val FLUX1_WHOLE_FREE = 12_500_000_000L
+
+    /** ⚠ MiniMax H3 Image's NPU budget, GiB: under its 11.6 GB DiT so it streams; one 217 MB block and a picture's compute. */
+    internal const val H3_IMAGE_BUDGET = "4"
 
     /** ⭐ FLUX.1's text encoders on the CPU, as measured (`docs/IMPORTS.md`). */
     private const val FLUX1_BACKEND = "diffusion=HTP0,te=CPU,vae=HTP0"
@@ -1118,6 +1123,12 @@ object BackendProcess {
                             (listOf(model) + spec.donorDirs(model)).map { File(it, ModelCatalog.FLUX1_CLIP_L) }.firstOrNull { it.isFile }
                                 ?.let { put("NM_DIT_CLIP_L", it.absolutePath) }
                             put("NM_DIT_BACKEND", FLUX1_BACKEND)
+                        }
+                        // ⭐ MiniMax H3 Image ([Family.H3IMAGE]): FastH3's text route, Qwen3-VL-4B through ClipProj (`dit/076`).
+                        // The `krea2` launch has no ClipProj argument; the engine reads its path here.
+                        if (spec?.family == Family.H3IMAGE) {
+                            (listOf(model) + spec.donorDirs(model)).map { File(it, ModelCatalog.H3_CLIPPROJ) }.firstOrNull { it.isFile }
+                                ?.let { put("NM_H3_CLIPPROJ", it.absolutePath) }
                         }
                         // ⭐ A model's own flow shift ([ModelSpec.flowShift]), or the node's (GitHub #129).
                         (flowShift ?: spec?.flowShift)?.let { put("NM_DIT_FLOW_SHIFT", it) }

@@ -160,6 +160,13 @@ enum class Family(
     /** ⭐ Bria's Fibo 2.0 Edit Turbo (GH #69, `dit/056`): an 8B editor on Z-Image's DiT, Qwen3-VL-4B with its vision. */
     FIBO2("Fibo 2.0", GP_DIT, GP_DIT_NEG, "fibo2", dit = true, edit = true),
     /**
+     * ⭐ **MiniMax H3 Image** (MiniMax, MiniMax-H3-Image Community License, `docs/MINIMAX-H3.md` §7): H3's transformer run
+     * without audio, six "PDD" output heads blended per step, its own 2D VAE (engine `dit/100`, sd.cpp's #2324). Launched
+     * as `krea2` with FastH3's text route: Qwen3-VL-4B through ClipProj (`NM_H3_CLIPPROJ`, set by the app). ⚠ Text to
+     * image only (its reference edit is not wired).
+     */
+    H3IMAGE("MiniMax H3 Image", GP_DIT, GP_DIT_NEG, "h3image", dit = true),
+    /**
      * ⭐⭐ **Wan 2.2 TI2V 5B video** on the DiT engine (`docs/VIDEO-GGML.md`): a prompt, or a
      * prompt and a start picture, into a clip through `/video` (backend 028, engine ABI 106).
      * ⚠⚠ NOT a checkpoint: its one model ([ModelCatalog.WAN22]) is kept out of
@@ -2934,6 +2941,27 @@ object ModelCatalog {
                 RemoteFile(HF + "ostris/ideogram_4_turbotime_lora/resolve/main/ideogram_4_turbotime_v1.safetensors", IDEOGRAM_LORA, 846_778_576L),
             ),
         ),
+        // ⭐ MiniMax H3 Image ([Family.H3IMAGE], `docs/MINIMAX-H3.md` §7): our Q4_0 of Comfy-Org's pruned bf16 DiT (40.2 GB:
+        // FastH3's 50 blocks with six PDD output heads and no audio), the image VAE as Comfy ships it, and FastH3's text
+        // route, Qwen3-VL-4B through ClipProj v3.1 (Krea 2's 4B and tokenizer when Krea 2 is installed, [ModelSpec.partsFrom]).
+        // 6 steps at CFG 1: the engine blends the heads on its own six sigmas ("Normal" schedule). ⚠ v79 until v75 is run.
+        dit(
+            "minimax_h3_image", "MiniMax H3 Image", Family.H3IMAGE, KREA2, steps = 6,
+            ownDitParts = true,
+            partsFrom = "krea2_turbo",
+            minArch = DIT_GGML_MIN_ARCH,
+            minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+            prompt = "a silver tabby kitten holding a hand-painted wooden sign that reads NIGHTMARE, natural daylight, realistic photograph",
+            files = listOf(
+                RemoteFile(HF + "AbrahamPJ/minimax-h3-image-q4_0-gguf/resolve/main/minimax_h3_image_q4_0.gguf", "dit.gguf", H3_IMAGE_DIT_BYTES),
+                RemoteFile(HF + "Comfy-Org/MiniMax-H3-Image/resolve/main/vae/minimax_h3_image_vae_fp16.safetensors", "vae.safetensors", 1_168_505_312L),
+                RemoteFile(HF + "NicoLab28/ClipProj-MiniMax-H3/resolve/main/mmh3-4b-ClipProj-v3.1.safetensors", H3_CLIPPROJ, 26_256_128L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ).copy(
+            licence = ModelLicence(R.string.licence_h3img_title, R.string.licence_h3img_terms, "https://huggingface.co/MiniMaxAI/MiniMax-H3-Image/blob/main/LICENSE"),
+        ),
         // ⭐ FLUX.2 Klein 9B — the same architecture as 4B, so the same family,
         // sampler and edit; only the files differ. `leejet`'s Q4_0 DiT and
         // Qwen3-8B as the text encoder, as the fork's README runs it (7841da2;
@@ -3171,12 +3199,15 @@ object ModelCatalog {
             RemoteFile(HF + "AbrahamPJ/fasth3-dense-v1-q4_0-gguf/resolve/main/fasth3_dense_v1_euler4_q4_0.gguf", "dit.gguf", 11_583_540_608L),
             RemoteFile(HF + "ZawShiShawn/Gestura-MiniMax-H3-VAE-GGUF/resolve/main/split/vae/minimax_h3_video_vae_Q8_0.gguf", "vae.gguf", 2_936_962_688L),
             RemoteFile(HF + "Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors", "audio_vae.safetensors", 605_254_808L),
-            RemoteFile(HF + "NicoLab28/ClipProj-MiniMax-H3/resolve/main/mmh3-4b-ClipProj-v3.1.safetensors", "clipproj.safetensors", 26_256_128L),
+            RemoteFile(HF + "NicoLab28/ClipProj-MiniMax-H3/resolve/main/mmh3-4b-ClipProj-v3.1.safetensors", H3_CLIPPROJ, 26_256_128L),
             RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
         ),
     ).copy(
         licence = ModelLicence(R.string.licence_h3_title, R.string.licence_h3_terms, "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE"),
     )
+
+    /** ⭐ ClipProj's file in an H3 package: FastH3's backend reads it by name, H3 Image's launch passes its path. */
+    const val H3_CLIPPROJ = "clipproj.safetensors"
 
     /** ⭐ H3 Reference's own LoRA ([ModelSpec.ownLora]): Comfy-Org's 4-step turbo for the Ref2VA DiT. */
     const val H3_REF_LORA = "ref2v_turbo4.safetensors"
@@ -3210,6 +3241,9 @@ object ModelCatalog {
 
     /** ⚠ Our Q4_0 of the Ref2VA DiT, read off the converted file. */
     private const val H3_REF_DIT_BYTES = 11_564_180_576L
+
+    /** ⚠ Our Q4_0 of MiniMax H3 Image's DiT (`../LocalDream/h3img/h3imgq4.py`): 208 Q4_0 linears, the rest F32. */
+    private const val H3_IMAGE_DIT_BYTES = 11_573_102_144L
 
     /** ⚠ The video models: found by [byId], never listed as checkpoints. */
     // ⚠ Not [WAN22_A14B]: one 14B download, its image to video experts; text to video on the 14B makes the first

@@ -1,0 +1,17 @@
+diff --git a/src/model/diffusion/z_image.hpp b/src/model/diffusion/z_image.hpp
+index f3076bd..81742ca 100644
+--- a/src/model/diffusion/z_image.hpp
++++ b/src/model/diffusion/z_image.hpp
+@@ -162,7 +162,11 @@ namespace ZImage {
+             // Hexagon: the matmul result passes through fp16, and attention.out's reaches 92k (context_refiner.0)
+             // and 138k (noise_refiner.0) on Q4_0/Q8_0 GGUFs -> inf -> NaN everywhere (SD_NAN_PROBE on the S25).
+             // ROCm's 1/16 keeps it in range. SD_ZIMAGE_OUT_SCALE overrides; fp8 renders right and is left alone.
+-            if (sd_backend_is(ctx->backend, "HTP") && out_proj->weight_type() != GGML_TYPE_F8_E4M3) {
++            // nightmare dit/099: OpenCL too. The plain Adreno Q4_0 GEMM (a GPU without the dense DP4A kernel, or with it
++            // off) accumulates in half8, so the same 92k/138k overflow there: inf, then a flat green frame (NitroFusion 2
++            // on an 8s Gen 4; the S25 with GGML_OPENCL_Q4_0_DENSE_DP4A=0). A power of two: the DP4A path is unchanged.
++            if ((sd_backend_is(ctx->backend, "HTP") || sd_backend_is(ctx->backend, "OpenCL")) &&
++                out_proj->weight_type() != GGML_TYPE_F8_E4M3) {
+                 static const float htp_out_scale = [] {
+                     const char* e = getenv("SD_ZIMAGE_OUT_SCALE");
+                     return e ? (float)atof(e) : 1.f / 16.f;

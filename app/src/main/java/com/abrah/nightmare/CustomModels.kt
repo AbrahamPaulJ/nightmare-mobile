@@ -482,6 +482,8 @@ object CustomModels {
         Family.MOSS -> Defaults("euler", 8, 1.0)
         // Ideogram 4 with its TurboTime LoRA: 8 steps, no CFG (ostris' card, the measured run).
         Family.IDEOGRAM -> Defaults("euler", 8, 1.0)
+        // MiniMax H3 Image: its six PDD sigmas, at CFG 1 (`dit/100`).
+        Family.H3IMAGE -> Defaults("euler", 6, 1.0)
         // FLUX.3 Image Klein, the distilled model: 16 steps, no CFG (upstream sd.cpp's docs/flux3.md).
         Family.FLUX3 -> Defaults("euler", 16, 1.0)
         // FLUX.1 dev: 20 steps, CFG 1 (its guidance is the distilled 3.5). ⚠ A schnell or a turbo import lowers it by hand.
@@ -576,6 +578,8 @@ object CustomModels {
             Family.FLUX1 -> ModelCatalog.KREA2
             // ⭐ An imported Fibo 2.0 ([FIBO2_MARK]): Krea 2's launch; backend 049 adds the vision tower.
             Family.FIBO2 -> ModelCatalog.KREA2
+            // ⚠ Unreachable until an H3 Image import exists; the built-in's launch.
+            Family.H3IMAGE -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
             Family.WAN -> ModelCatalog.WAN
         },
@@ -585,7 +589,7 @@ object CustomModels {
                 Family.SD15, Family.SD15_SWAP -> ModelCatalog.SD15_NPU_RES
                 Family.SDXL, Family.SDXL_SWAP -> ModelCatalog.SDXL_NPU_RES
                 Family.ANIMA -> ModelCatalog.ANIMA_NPU_RES
-                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3, Family.FLUX1, Family.FIBO2 -> ModelCatalog.DIT_RES
+                Family.FLUX2, Family.ZIMAGE, Family.QWEN21, Family.KREA2, Family.ANIMA_DIT, Family.WAN, Family.MOSS, Family.IDEOGRAM, Family.FLUX3, Family.FLUX1, Family.FIBO2, Family.H3IMAGE -> ModelCatalog.DIT_RES
                 // ⚠ Unreachable, as for `backendType`; the catalogue entry carries [ModelCatalog.IRIS_SIZES].
                 Family.IRIS -> ModelCatalog.IRIS_SIZES.first()
             },
@@ -609,6 +613,7 @@ object CustomModels {
             Family.FLUX1 -> listOf(weights) + DIT_PARTS + ModelCatalog.FLUX1_CLIP_L
             // ⭐ Its vision tower too: Fibo reads the picture through it (backend 049).
             Family.FIBO2 -> listOf(weights) + DIT_PARTS + "llm_vision.gguf"
+            Family.H3IMAGE -> listOf(weights) + DIT_PARTS + ModelCatalog.H3_CLIPPROJ
             // ⚠ Either format: an alpha.3 folder has `dit.gguf`, alpha.4's `dit.safetensors`.
             Family.QWEN21 -> listOf(weights) + ModelCatalog.QWEN21_PARTS
             Family.WAN -> ModelCatalog.WAN22.requiredFiles
@@ -647,6 +652,7 @@ object CustomModels {
             Family.FLUX1 -> false
             // ⚠ The same launch as Krea 2 (all=disk).
             Family.FIBO2 -> false
+            Family.H3IMAGE -> false
             Family.WAN -> false
         },
         // ⚠⚠ **No arch claim.** Nothing in a QNN context directory says which

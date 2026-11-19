@@ -646,6 +646,7 @@
     <string name="models_family_flux3">约 6.2 GB。8 Gen 3 或更新芯片。Black Forest Labs 最新的图像模型：细节清晰，紧跟提示词，16 步。8 Elite 上 512x512 约 45 秒，1024x1024 约 2 分钟。仅文生图。采用 FLUX Kommunity License 许可。请使用 Wi-Fi。</string>
     <string name="models_family_flux1">约 10.8 GB。12 GB 及以上手机，8 Elite 或更新芯片。Black Forest Labs 的 FLUX.1 dev：512x512 约 4 分钟，1024x1024 约 6 分钟，20 步。仅文生图。仅限非商业用途。</string>
     <string name="models_family_fibo2">约 8.4 GB。8 Gen 3 或更新芯片，12 GB 内存。Bria 的 Fibo 2.0 Edit：连入一张图片并写下要修改的内容，4 步完成。图片其余部分保持不变，也能在牌子上写字。不连图片时也能直接用提示词生成图片：在 8 Elite 上 896x1600 约一分钟。非商业许可（Bria）。请使用 Wi-Fi。</string>
+    <string name="models_family_h3image">约 15 GB（与 Krea 2 同装时 13 GB，共用其文本编码器）。需 12 GB 及以上内存、8 Elite 或更新。MiniMax 由 H3 视频模型做成的图片模型：6 步，无 CFG：8 Elite 上 1024x1024 约 1 分 45 秒（8 Gen 3 稍慢），擅长画面中的文字。仅文生图。许可不适用于欧盟、英国、韩国和美国。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>
     <string name="models_import_dit_body">一个 .safetensors 或 .gguf 检查点，可来自 CivitAI 或 Hugging Face，直接使用，无需转换。Klein 4B 和 Z-Image 会借用文本编码器和 VAE（最多需下载 2.6 GB；已有该模型则无需下载）。Klein 9B 和 Krea 2 会获取自己的副本（分别为 4.8 GB 和 2.6 GB）。大于手机约一半内存的文件在渲染时很可能被 Android 关闭。</string>
@@ -1439,6 +1440,9 @@
     <string name="mb_powered_h3">Powered by MiniMax H3</string>
     <string name="licence_h3_title">MiniMax H3 Community License 许可</string>
     <string name="licence_h3_terms">MiniMax H3 由 MiniMax 制作，按 MiniMax H3 Community License 发布。下载即表示你接受该许可。简要来说：\n\n• 许可不适用于欧盟、英国、韩国和美国。请勿在这些地区下载或使用。\n• 用它制作并公开分享的内容必须清楚标明由 AI 生成。\n• 它生成的视频不得用于训练或改进其他 AI 模型。\n• 须遵守其可接受使用政策：不得用于违法或有害用途。\n\nNightmare 在使用该模型的地方显示“Powered by MiniMax H3”。</string>
+    <string name="mb_powered_h3img">Powered by MiniMax-H3-Image</string>
+    <string name="licence_h3img_title">MiniMax-H3-Image Community License</string>
+    <string name="licence_h3img_terms">MiniMax-H3-Image 由 MiniMax 制作，按 MiniMax-H3-Image Community License 发布。下载即表示你接受该许可。简要来说：\n\n• 许可不适用于欧盟、英国、韩国和美国。请勿在这些地区下载或使用。\n• 用它制作并公开分享的内容必须清楚标明由 AI 生成。\n• 它生成的图片不得用于训练或改进其他 AI 模型。\n• 须遵守其可接受使用政策：不得用于违法或有害用途。\n\nNightmare 在使用该模型的地方显示“Powered by MiniMax-H3-Image”。</string>
     <string name="licence_read">阅读完整许可</string>
     <string name="licence_accept">接受并下载</string>
     <string name="hint_h3_size">384x384 最快。面积最多相当于 768x1344；尺寸越大，能容纳的秒数越少（下方提示会说明）。不要小于 384：更小的视频会失去颜色。</string>
