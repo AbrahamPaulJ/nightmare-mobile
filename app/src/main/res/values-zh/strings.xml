@@ -1498,6 +1498,7 @@
     <string name="layout_clear">清空</string>
     <string name="layout_clear_title">清空布局？</string>
     <string name="layout_clear_body">将删除全部 %1$d 个框及其说明。提示词保留。</string>
+    <string name="layout_box_hint">框 %1$d 里是什么：类型和外观。写入提示词，用于画面的这一部分。</string>
     <string name="layout_box_title">框 %1$d</string>
     <string name="layout_delete_box">删除框 %1$d</string>
     <string name="layout_kind">类型</string>

@@ -3,6 +3,7 @@ package com.abrah.nightmare.canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.asImageBitmap
 import com.abrah.nightmare.MossLayout
 import com.abrah.nightmare.goldenPath
 import com.abrah.nightmare.ui.NightmareTheme
@@ -38,6 +39,25 @@ class MossLayoutPanelTest {
             androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
                 androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(rememberScrollState())) {
                     MossLayoutPanel(poster, 768, 1024) {}
+                }
+            }
+        }
+    }
+
+    /**
+     * ⭐ The user's phone, 2026-11-19: on a photo the boxes sit over the picture (it was a blank panel), and at a
+     * narrow width the buttons move to a second line whole: Clear came out as "Cle / ar".
+     */
+    @Test
+    @Config(qualifiers = "w320dp-h1200dp-xxhdpi")
+    fun onAPhotoAtANarrowWidth() = captureRoboImage(filePath = goldenPath(this, "moss-layout-photo-w320")) {
+        val photo = android.graphics.Bitmap.createBitmap(96, 128, android.graphics.Bitmap.Config.ARGB_8888).apply {
+            for (y in 0 until 128) for (x in 0 until 96) setPixel(x, y, android.graphics.Color.rgb(40 + x, 90 + y / 2, 160))
+        }.asImageBitmap()
+        NightmareTheme(darkTheme = true) {
+            androidx.compose.material3.Surface(androidx.compose.ui.Modifier.fillMaxSize()) {
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(rememberScrollState())) {
+                    MossLayoutPanel(poster, 768, 1024, photo) {}
                 }
             }
         }

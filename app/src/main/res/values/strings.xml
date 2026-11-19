@@ -1529,6 +1529,7 @@
     <string name="layout_clear">Clear</string>
     <string name="layout_clear_title">Clear the layout?</string>
     <string name="layout_clear_body">All %1$d boxes and what they say are removed. The prompt is kept.</string>
+    <string name="layout_box_hint">What is in box %1$d: the kind, and what it looks like. Written into the prompt for that part of the picture.</string>
     <string name="layout_box_title">Box %1$d</string>
     <string name="layout_delete_box">Delete box %1$d</string>
     <string name="layout_kind">What it is</string>

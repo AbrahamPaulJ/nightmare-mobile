@@ -1525,6 +1525,7 @@
     <string name="layout_clear">Очистить</string>
     <string name="layout_clear_title">Очистить разметку?</string>
     <string name="layout_clear_body">Все рамки (%1$d) и их описания будут удалены. Промпт останется.</string>
+    <string name="layout_box_hint">Что в рамке %1$d: тип и как это выглядит. Добавляется в запрос для этой части картинки.</string>
     <string name="layout_box_title">Рамка %1$d</string>
     <string name="layout_delete_box">Удалить рамку %1$d</string>
     <string name="layout_kind">Что это</string>

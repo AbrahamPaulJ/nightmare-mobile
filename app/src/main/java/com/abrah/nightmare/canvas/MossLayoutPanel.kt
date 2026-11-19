@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -67,8 +68,9 @@ import com.abrah.nightmare.ui.dangerOutlinedColors
  * ⚠ The boxes are kept as fractions on the node ([MossLayout.PARAM]), so changing the picture's size keeps them where
  * they were drawn. A drag writes the node once, when the finger lifts; typing writes as it goes, as every field does.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) -> Unit) {
+internal fun MossLayoutPanel(param: String?, w: Int, h: Int, photo: ImageBitmap? = null, onSave: (String) -> Unit) {
     var layout by remember(param) { mutableStateOf(MossLayout.read(param)) }
     var selected by remember { mutableIntStateOf(-1) }
     var clearing by remember { mutableStateOf(false) }
@@ -80,13 +82,23 @@ internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) ->
     )
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.layout_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LayoutCanvas(layout, selected, w, h, onSelect = { selected = it }, onLive = { layout = it }, onDone = { commit(it) })
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        LayoutCanvas(layout, selected, w, h, photo, onSelect = { selected = it }, onDone = { commit(it) })
+        // ⚠ A FlowRow: on a narrow phone a button moves to a second line whole instead of its label wrapping (the user,
+        // 2026-11-19: Clear came out as "Cle / ar"). Destructive before the add, as every row orders them.
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             IconButton(onClick = { history.undo(param.orEmpty()) { layout = MossLayout.read(it); onSave(it) } }, enabled = history.canUndo) {
                 Icon(com.abrah.nightmare.ui.UndoIcon, contentDescription = stringResource(R.string.draw_undo))
             }
             IconButton(onClick = { history.redo(param.orEmpty()) { layout = MossLayout.read(it); onSave(it) } }, enabled = history.canRedo) {
                 Icon(com.abrah.nightmare.ui.RedoIcon, contentDescription = stringResource(R.string.draw_redo))
+            }
+            if (layout.boxes.isNotEmpty()) {
+                StudioTextButton(onClick = { clearing = true }, colors = dangerOutlinedColors()) {
+                    Text(stringResource(R.string.layout_clear), maxLines = 1, softWrap = false)
+                }
             }
             StudioOutlinedButton(onClick = {
                 // ⭐ A new box in the middle, a third of the picture, offset so a second one is not hidden under the first.
@@ -95,12 +107,7 @@ internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) ->
                 selected = layout.boxes.lastIndex
             }) {
                 Icon(Icons.Filled.Add, contentDescription = null)
-                Text(stringResource(R.string.layout_add_box), modifier = Modifier.padding(start = 4.dp))
-            }
-            if (layout.boxes.isNotEmpty()) {
-                StudioTextButton(onClick = { clearing = true }, colors = dangerOutlinedColors()) {
-                    Text(stringResource(R.string.layout_clear))
-                }
+                Text(stringResource(R.string.layout_add_box), modifier = Modifier.padding(start = 4.dp), maxLines = 1, softWrap = false)
             }
         }
         layout.boxes.forEachIndexed { i, b ->
@@ -168,8 +175,8 @@ private fun LayoutCanvas(
     selected: Int,
     w: Int,
     h: Int,
+    photo: ImageBitmap?,
     onSelect: (Int) -> Unit,
-    onLive: (MossLayout.Layout) -> Unit,
     onDone: (MossLayout.Layout) -> Unit,
 ) {
     val aspect = if (w > 0 && h > 0) w.toFloat() / h else 1f
@@ -182,6 +189,10 @@ private fun LayoutCanvas(
     val tolPx = with(LocalDensity.current) { LayoutSnap.TOLERANCE_DP.dp.toPx() }
     // The lines a drag has snapped to, (true = vertical line at x, false = horizontal at y); drawn while the finger is down.
     var guides by remember { mutableStateOf(emptyList<Pair<Boolean, Double>>()) }
+    // ⭐ The layout while a finger drags, held HERE: read only in the draw, so a drag redraws this canvas and nothing else.
+    // It was lifted to the panel on every move, which recomposed every box card and its text fields each frame (the user
+    // asked for a smooth drag, 2026-11-19). The cards follow when the finger lifts.
+    var live by remember { mutableStateOf<MossLayout.Layout?>(null) }
     val guide = MaterialTheme.colorScheme.primary
     BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         // ⚠ A tall picture is held to 360dp high, so the cards stay in reach under it.
@@ -275,10 +286,11 @@ private fun LayoutCanvas(
                                 Drag.NONE -> latest
                             }
                             guides = snapped
-                            onLive(work)
+                            live = work
                             onSelect(if (mode == Drag.DRAW) drawing else target)
                         } while (true)
                         guides = emptyList()
+                        live = null
                         if (moved) onDone(work)
                         else if (under.isNotEmpty()) {
                             // ⭐ A tap: the box under the finger; again where boxes overlap, the next one down.
@@ -288,16 +300,21 @@ private fun LayoutCanvas(
                     }
                 },
         ) {
-            layout.boxes.forEachIndexed { i, b ->
+            // ⭐ The picture the boxes are drawn over: the input photo as the Crop tab frames it (the user, 2026-11-19:
+            // "we can't see the pic in the background"). None for text to image, where the frame is all there is.
+            photo?.let { drawImage(it, dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt())) }
+            (live ?: layout).boxes.forEachIndexed { i, b ->
                 val col = layoutColor(b.label)
                 val tl = Offset((b.x1 * size.width).toFloat(), (b.y1 * size.height).toFloat())
                 val bs = Size(((b.x2 - b.x1) * size.width).toFloat(), ((b.y2 - b.y1) * size.height).toFloat())
                 drawRect(col.copy(alpha = if (i == selected) 0.30f else 0.16f), tl, bs)
                 drawRect(col, tl, bs, style = Stroke(if (i == selected) 3.dp.toPx() else 1.5.dp.toPx()))
-                // ⭐ The numbered tab: the box's number on its colour, what the cards below are numbered by.
+                // ⭐ The numbered tab: the box's number on its colour, what the cards below are numbered by. Set in from
+                // the corner so the selected box's corner dot does not cover it.
                 val t = measurer.measure("${i + 1}", tabStyle)
-                drawRect(col, tl, Size(t.size.width + 8.dp.toPx(), t.size.height + 2.dp.toPx()))
-                drawText(t, color = Color.Black, topLeft = tl + Offset(4.dp.toPx(), 1.dp.toPx()))
+                val tab = tl + Offset(handle, 0f)
+                drawRect(col, tab, Size(t.size.width + 8.dp.toPx(), t.size.height + 2.dp.toPx()))
+                drawText(t, color = Color.Black, topLeft = tab + Offset(4.dp.toPx(), 1.dp.toPx()))
                 if (i == selected) {
                     // ⭐ A dot on every corner: each one resizes (GitHub #132).
                     for (cx in listOf(tl.x, tl.x + bs.width)) for (cy in listOf(tl.y, tl.y + bs.height)) {
@@ -335,6 +352,9 @@ private fun BoxCard(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // ⭐ The box's colour beside its number, so the card reads as THAT box on the picture (the user asked what
+            // "Box 1" was, 2026-11-19).
+            androidx.compose.foundation.layout.Box(Modifier.padding(end = 8.dp).size(14.dp).background(col, MaterialTheme.shapes.extraSmall))
             Text(
                 stringResource(R.string.layout_box_title, i + 1),
                 style = MaterialTheme.typography.titleSmall,
@@ -344,6 +364,8 @@ private fun BoxCard(
                 Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.layout_delete_box, i + 1), tint = MaterialTheme.colorScheme.error)
             }
         }
+        // ⚠ Once, under the first card: what a card is for, not repeated on every one.
+        if (i == 0) Text(stringResource(R.string.layout_box_hint, i + 1), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Chooser(
             stringResource(R.string.layout_kind), null, labels,
             labels[MossLayout.LABELS.indexOf(b.label).coerceAtLeast(0)],
