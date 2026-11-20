@@ -662,6 +662,14 @@ object BackendProcess {
         (spec.files + if (spec.isCustom) ModelCatalog.builtIn.filter { it.family == spec.family }.flatMap { it.files } else emptyList())
             .any { it.name == "llm.gguf" && it.bytes == teBytes }
 
+    /**
+     * ⭐ GitHub #143: Qwen 2.1 on a v73 NPU decodes on the CPU. S25 forced to v73, 512², 8 steps: the NPU decode
+     * stacks two copies (four on a real 8 Gen 2), full-frame and at tile 16 alike; with `vae=CPU` it is the v79
+     * picture, 180 s against 64. ⚠ Only a known v73-class chip: v75 and up decode it right, v69 runs all on the CPU.
+     */
+    internal fun v73CpuVae(spec: ModelSpec?, caps: DeviceProbe.Caps): Boolean =
+        spec?.family == Family.QWEN21 && caps.known && caps.arch in 73 until 75
+
     internal fun lowArchOpFilter(arch: Int): String =
         if (arch < 75) "CONV_2D_UPSCALE|CONCAT|SWIGLU" else "CONV_2D_UPSCALE|CONCAT"
 
@@ -1126,6 +1134,9 @@ object BackendProcess {
                         // 1.6.214), the phone idle. The S25 forced to v69 runs both, so it is the hardware. ⇒ The whole
                         // DiT on the CPU there: Anima Turbo 512² 10 steps 520 s on the S25's CPU, so ~15-20 min there.
                         if (ditOnCpu(DeviceProbe.caps()) && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_ALL)
+                        // ⭐ GitHub #143: Qwen 2.1's decode on a v73 NPU (8 Gen 2, 8s Gen 3, 8s Gen 4) stacks the picture
+                        // into copies, full-frame or tiled. On the CPU it is the v79 picture ([v73CpuVae], `docs/DEVICES.md` §3b).
+                        if (v73CpuVae(spec, DeviceProbe.caps()) && !diagnosing) put("NM_DIT_BACKEND", BlankDiagnosis.CPU_VAE)
                         // ⭐ The trial ([Prefs.v69Npu]): at most 3 workers + main on v69, or main's HVX deadlocks (HexAnima's
                         // `docs/PITFALLS.md`).
                         if (Prefs.v69Npu && belowDitNpu(DeviceProbe.caps())) put("GGML_HEXAGON_NHVX", "3")
