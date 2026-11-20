@@ -1101,7 +1101,8 @@ data class ModelSpec(
      * legal DiT size but one. ⇒ Ask this, never the list.
      */
     fun serves(context: Context, res: Res): Boolean =
-        if (isDit && !fixedSizes) ModelCatalog.ditMax(family).let { m -> ModelCatalog.ditSupported(res.width, m) && ModelCatalog.ditSupported(res.height, m) }
+        if (isDit && !fixedSizes) ModelCatalog.ditMax(family).let { m -> ModelCatalog.ditSupported(res.width, m) && ModelCatalog.ditSupported(res.height, m) } &&
+            ModelCatalog.ditAreaFits(family, res.width, res.height)
         else res in availableResolutions(context)
 
     /**
@@ -1110,7 +1111,8 @@ data class ModelSpec(
      * picked from when the real rule is a range.
      */
     fun sizesServedText(context: Context): String =
-        if (isDit && !fixedSizes) "any size ${ModelCatalog.DIT_MIN}–${ModelCatalog.ditMax(family)} in ${ModelCatalog.DIT_STEP}-pixel steps"
+        if (isDit && !fixedSizes) "any size ${ModelCatalog.DIT_MIN}–${ModelCatalog.ditMax(family)} in ${ModelCatalog.DIT_STEP}-pixel steps" +
+            (ModelCatalog.ditMaxPixels(family)?.let { ", up to ${it / 1_000_000.0} megapixels" } ?: "")
         else availableResolutions(context).joinToString(", ")
 
     /** What this model occupies on disk, or 0 when it is not installed. */
@@ -1288,10 +1290,23 @@ object ModelCatalog {
     const val DIT_STEP = 64
 
     /**
-     * ⭐ MiniMax H3 Image's ceiling: 4096 a side (Telegram #8301/#8315, 2026-11-20: "designed in native 4K"). Every other
-     * DiT keeps [DIT_MAX]. ⚠ See `docs/MINIMAX-H3.md` §7 for what 4096x4096 costs on the S25.
+     * ⭐ MiniMax H3 Image's ceiling: 4096 a side (Telegram #8301/#8315, 2026-11-20: "designed in native 4K"), so a 4K
+     * picture at 16:9 (3840x2160) renders. Every other DiT keeps [DIT_MAX].
      */
     const val H3_IMAGE_MAX = 4096
+
+    /**
+     * ⚠⚠ …and at most this many PIXELS: a block's memory grows with the area (~363 MB a megapixel + 361 MB on the S25,
+     * 2026-11-21). 3072x3072 renders at its 4 GiB budget (21 min); 3584x3584 needs 5,027 MB and 4096x4096 6,453 MB, and
+     * at a 7 GiB budget lmkd killed the app on a 12 GB phone (`docs/MINIMAX-H3.md` §7).
+     */
+    const val H3_IMAGE_MAX_PIXELS = 3072 * 3072
+
+    /** ⭐ The most pixels [family] renders, or null where the sides alone decide. */
+    fun ditMaxPixels(family: Family?): Int? = if (family == Family.H3IMAGE) H3_IMAGE_MAX_PIXELS else null
+
+    /** ⭐ Does [w]x[h] fit [family]'s area ([ditMaxPixels])? */
+    fun ditAreaFits(family: Family?, w: Int, h: Int): Boolean = ditMaxPixels(family)?.let { w.toLong() * h <= it } ?: true
 
     /** ⭐ The largest side [family] renders on the grid. */
     fun ditMax(family: Family?): Int = if (family == Family.H3IMAGE) H3_IMAGE_MAX else DIT_MAX
@@ -1316,7 +1331,16 @@ object ModelCatalog {
      * that shape, then nearest that area, because it renders its own size whatever is asked.
      */
     fun keptSize(spec: ModelSpec, w: Int, h: Int): Res {
-        if (spec.isDit && !spec.fixedSizes) return ditMax(spec.family).let { m -> Res(ditSnap(w, m), ditSnap(h, m)) }
+        if (spec.isDit && !spec.fixedSizes) {
+            val m = ditMax(spec.family)
+            var r = Res(ditSnap(w, m), ditSnap(h, m))
+            // ⭐ Over [ditMaxPixels]: the same shape, smaller, a grid step at a time until it fits.
+            while (!ditAreaFits(spec.family, r.width, r.height) && (r.width > DIT_MIN || r.height > DIT_MIN)) {
+                r = if (r.width >= r.height) Res(r.width - DIT_STEP, ditSnap((r.width - DIT_STEP) * r.height / r.width, m))
+                    else Res(ditSnap((r.height - DIT_STEP) * r.width / r.height, m), r.height - DIT_STEP)
+            }
+            return r
+        }
         val aspect = w.toDouble() / h.coerceAtLeast(1)
         val area = w.toDouble() * h
         return spec.resolutions.minWithOrNull(

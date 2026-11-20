@@ -1539,4 +1539,5 @@
     <string name="shell_ram_chip">RAM %1$s / %2$s GB free · CPU %3$s° GPU %4$s° NPU %5$s° Battery %6$s°</string>
     <string name="chip_temps">Show the chip\'s temperatures</string>
     <string name="chip_temps_hint">The RAM line shows the CPU, GPU and NPU (the hottest sensor of each) instead of the battery. The heat warnings still follow the battery.</string>
+    <string name="dit_area_too_big">%1$dx%2$d is more than this model can render on a phone. Keep it to %3$dx%4$d pixels or fewer, in any shape: 3840x2160 (4K) fits.</string>
 </resources>

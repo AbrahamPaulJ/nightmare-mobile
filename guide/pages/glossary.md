@@ -10,7 +10,7 @@ literal; too high burns the colours. FLUX.2, Z-Image, Qwen Image, Krea 2, Iris a
 it completely.
 
 **DiT**: "diffusion transformer", the newer kind of image model: FLUX.2, Z-Image, Qwen
-Image, Krea 2 and Iris. They read full sentences and draw any size from 512 to 2048 (MiniMax H3 Image to 4096), except
+Image, Krea 2 and Iris. They read full sentences and draw any size from 512 to 2048 (MiniMax H3 Image to 4096 a side, 9.4 megapixels), except
 Iris, which draws only the sizes it was trained at.
 
 **Edit model**: a model that takes a photo as a clean reference and changes it to follow an

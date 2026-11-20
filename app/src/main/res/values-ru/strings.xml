@@ -1535,4 +1535,5 @@
     <string name="shell_ram_chip">ОЗУ %1$s / %2$s ГБ свободно · CPU %3$s° GPU %4$s° NPU %5$s° Батарея %6$s°</string>
     <string name="chip_temps">Температура чипа</string>
     <string name="chip_temps_hint">В строке ОЗУ показываются CPU, GPU и NPU (самый горячий датчик каждого) вместо батареи. Предупреждения о нагреве по-прежнему следят за батареей.</string>
+    <string name="dit_area_too_big">%1$dx%2$d больше, чем эта модель может отрисовать на телефоне. Не больше %3$dx%4$d пикселей, в любой пропорции: 3840x2160 (4K) подходит.</string>
 </resources>

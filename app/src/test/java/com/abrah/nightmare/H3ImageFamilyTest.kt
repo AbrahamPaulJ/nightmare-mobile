@@ -64,7 +64,11 @@ class H3ImageFamilyTest {
     fun h3ImageGoesTo4096AndNothingElseDoes() {
         val h3 = ModelCatalog.byId("minimax_h3_image")!!
         assertEquals(4096, ModelCatalog.ditMax(h3.family))
-        assertEquals(4096, ModelCatalog.keptSize(h3, 4096, 4096).width)
+        // ⚠ …but an area cap: 4096x4096 is kept at 3072x3072, the measured fit; 4K at 16:9 stays whole.
+        assertEquals(Res(3072, 3072), ModelCatalog.keptSize(h3, 4096, 4096))
+        assertEquals(Res(3840, 2176), ModelCatalog.keptSize(h3, 3840, 2160))
+        assertTrue(ModelCatalog.ditAreaFits(h3.family, 4096, 2304))
+        assertFalse(ModelCatalog.ditAreaFits(h3.family, 3584, 3584))
         val krea = ModelCatalog.byId("krea2_turbo")!!
         assertEquals(2048, ModelCatalog.keptSize(krea, 4096, 4096).width)
         assertEquals(4096, SdSampler.H3IMAGE.widgets.first { it.name == "width" }.max?.toInt())

@@ -2305,6 +2305,15 @@ class SdSampler(
         val kept = fixed?.let { ModelCatalog.keptSize(it, w0, h0) }
         val w = kept?.width ?: ModelCatalog.ditSnap(w0, ModelCatalog.ditMax(family))
         val h = kept?.height ?: ModelCatalog.ditSnap(h0, ModelCatalog.ditMax(family))
+        // ⚠ Refused, not shrunk: a picture that comes back a different size from the one set is the bug the grid exists
+        // to prevent ([ModelCatalog.ditSnap]). The person picks a smaller size or a wider shape.
+        if (!ModelCatalog.ditAreaFits(family, w, h)) {
+            val side = kotlin.math.sqrt(ModelCatalog.ditMaxPixels(family)!!.toDouble()).toInt()
+            throw IllegalStateException(
+                ctx.android?.getString(R.string.dit_area_too_big, w, h, side, side)
+                    ?: "${w}x$h is more than this model renders (up to ${side}x$side pixels)"
+            )
+        }
         // ⚠ Kept for Match colours: the result is matched to the FRAMED picture it was made from,
         // as the SD path does. Matching the whole photo pulled a framed dark corner of a bright
         // photo toward the photo's brightness.
