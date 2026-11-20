@@ -69,7 +69,7 @@ object PromptLoras {
         val consumers = graph.nodes.filter { n -> n.inputs.values.any { it.node == nodeId } }
         val active = consumers.flatMap { LoraSpec.parse(it.params[SdSampler.LORAS]).map { e -> e.name } }.toSet()
         val bases = consumers.mapNotNull { c ->
-            LoraLibrary.Base.of(ModelCatalog.byId(c.params["model"].orEmpty())?.family)
+            LoraLibrary.Base.of(ModelCatalog.byId(c.params["model"].orEmpty()))
         }.toSet()
         return Hint(active, bases)
     }

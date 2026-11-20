@@ -160,7 +160,14 @@ object CustomModels {
 
     /** ⭐ Whether [dir] (a MOSS import) can take the speed-up: not few-step already, and its donor holds the LoRA. */
     fun mossSpeedAvailable(dir: File): Boolean =
-        File(dir, MOSS_MARK).isFile && !File(dir, MOSS_FEW_STEP_MARK).isFile && mossSpeedLora(dir) != null
+        File(dir, MOSS_MARK).isFile && !mossIsFewStep(dir) && mossSpeedLora(dir) != null
+
+    /**
+     * ⭐ A few-step MOSS import: the mark written at import, or its folder's name (Telegram #9488, 2026-11-20: an import
+     * named `...-6step-Q4_0`, made before the mark, got the 8-step LoRA on top once its donor had one: 10 to 17+ min on
+     * the CPU, and the "made for 8 steps" note at 4).
+     */
+    internal fun mossIsFewStep(dir: File): Boolean = File(dir, MOSS_FEW_STEP_MARK).isFile || mossFewStep(dir.name)
 
     /**
      * ⭐ The speed-up's file in [dir]'s donor, or null. SFT's since GitHub #94, else `dmd8.safetensors`: what Base holds,
@@ -506,7 +513,7 @@ object CustomModels {
         family == Family.MOSS && mossSpeedOn(dir) -> Defaults("euler", 8, 1.0)
         // ⭐ An imported MOSS runs without the built-in's LoRA: a base fine-tune unless its name says few-step
         // (25 steps at CFG 3, Moody Moss Mix's card and the DeBand quality variants').
-        family == Family.MOSS && File(dir, MOSS_MARK).isFile && !File(dir, MOSS_FEW_STEP_MARK).isFile ->
+        family == Family.MOSS && File(dir, MOSS_MARK).isFile && !mossIsFewStep(dir) ->
             Defaults("euler", 25, 3.0)
         else -> familyDefaults(family)
     }
@@ -533,6 +540,7 @@ object CustomModels {
         partsFrom = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()?.takeIf { isValidName(it) },
         // ⭐ The donor's 8-step LoRA ([mossSpeedOn]), found through [ModelSpec.ownLoraFile].
         ownLora = if (family == Family.MOSS && mossSpeedOn(dir)) mossSpeedLora(dir) else null,
+        anima29 = family == Family.ANIMA_DIT && File(dir, ANIMA29_MARK).isFile,
         id = dir.name,
         label = cfg.label ?: dir.name,
         // ⭐ What the conversion kept ([ModelFeatures]) — the node dims the rest.

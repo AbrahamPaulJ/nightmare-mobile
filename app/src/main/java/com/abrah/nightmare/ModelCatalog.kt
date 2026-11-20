@@ -623,6 +623,11 @@ data class ModelSpec(
      */
     val ownLora: String? = null,
     /**
+     * ⭐ Anima 2.9B (40 blocks), built-in or imported ([CustomModels.ANIMA29_MARK]): its LoRAs are filed apart from
+     * Anima 2B's ([LoraLibrary.Base.ANIMA29], Telegram #8323, 2026-11-20: 2B LoRAs do not all work on it).
+     */
+    val anima29: Boolean = false,
+    /**
      * ⭐ The flow shift this model samples at, for the whole launch (`NM_DIT_FLOW_SHIFT`, `dit/048`), when it is not its
      * family's default. Null = the family's: NitroFusion 2 wants 6 at 2 steps, where Z-Image's default is 3.
      */
@@ -2440,12 +2445,14 @@ object ModelCatalog {
         cfg: Double = 1.0,
         /** ⚠ See [ModelSpec.ownLora]. */
         ownLora: String? = null,
+        anima29: Boolean = false,
         /** ⚠ See [ModelSpec.gpu]. */
         gpu: Boolean = false,
         /** ⚠ See [ModelSpec.flowShift]. */
         flowShift: String? = null,
     ) = ModelSpec(
         ownLora = ownLora,
+        anima29 = anima29,
         flowShift = flowShift,
         gpu = gpu,
         startRes = startRes,
@@ -2762,6 +2769,7 @@ object ModelCatalog {
             minArch = DIT_V69_MIN_ARCH,
             ownDitParts = true,
             ownLora = ANIMA29_TURBO_LORA,
+            anima29 = true,
             files = listOf(
                 RemoteFile(
                     HF + "Gazingstars123/Anima-2.9B/resolve/main/Anima-2.9B-preview-v1.safetensors",

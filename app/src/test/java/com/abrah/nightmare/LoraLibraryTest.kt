@@ -96,4 +96,26 @@ class LoraLibraryTest {
         assertEquals(listOf("Style"), LoraLibrary.foldersFor(items, folders, LoraLibrary.Base.ANIMA))
         assertEquals(listOf("anatomy", "Style"), LoraLibrary.foldersFor(items, folders, null))
     }
+
+    /** ⭐ Telegram #8323: an Anima 2.9B LoRA (blocks past 2B's 28) is filed apart; the adapter's blocks never count. */
+    @org.junit.Test
+    fun anAnima29LoraIsFiledApart() {
+        val b29 = """{"lora_unet_blocks_0_cross_attn_k_proj.lora_down.weight":1,"lora_unet_blocks_39_cross_attn_k_proj.lora_down.weight":1}"""
+        assertEquals(Base.ANIMA29, LoraLibrary.classify(b29))
+        val b2 = """{"diffusion_model.blocks.27.adaln_modulation_cross_attn.1.lora_A.weight":1,""" +
+            """"diffusion_model.llm_adapter.blocks.40.cross_attn.k_proj.lora_A.weight":1}"""
+        assertEquals(Base.ANIMA, LoraLibrary.classify(b2))
+        val spec29 = ModelCatalog.byId("anima_29b_preview")!!
+        assertEquals(Base.ANIMA29, Base.of(spec29))
+        assertEquals(Base.ANIMA, Base.of(ModelCatalog.builtIn.first { it.family == Family.ANIMA_DIT && !it.anima29 }))
+    }
+
+    /** ⭐ Telegram #8322: an H3 LoRA has its own chip, and FLUX.1 / FLUX.3 nodes offer FLUX's first. */
+    @org.junit.Test
+    fun anH3LoraHasItsOwnBase() {
+        assertEquals(Base.H3, LoraLibrary.classify("""{"diffusion_model.blocks.0.attn.qkv_proj.lora_A.weight":1,"diffusion_model.blocks.0.mlp.fc1.lora_A.weight":1}"""))
+        assertEquals(Base.H3, Base.of(Family.H3IMAGE))
+        assertEquals(Base.FLUX, Base.of(Family.FLUX1))
+        assertEquals(Base.FLUX, Base.of(Family.FLUX3))
+    }
 }

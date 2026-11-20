@@ -366,6 +366,7 @@ class ModelCatalogTest {
         assertEquals("2.75", BackendProcess.lowArchDitBudget(fibo, 75))
         assertEquals(16, BackendProcess.lowArchVaeTile(fibo))
         assertEquals(null, BackendProcess.lowArchVaeTile(krea))
+        assertEquals(16, BackendProcess.lowArchVaeTile(ModelCatalog.byId("flux3_klein")))
         assertEquals("2.75", BackendProcess.lowArchDitBudget(ModelCatalog.byId("flux2_klein_4b"), 75))
         // ⭐ A real 8 Gen 2 maps ~2.5 GB per session: each budget 0.75 GiB smaller (an SM8550 failed at 2.5).
         assertEquals("1.5", BackendProcess.lowArchDitBudget(klein9, 73))

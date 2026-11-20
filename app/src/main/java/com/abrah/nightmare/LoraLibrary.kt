@@ -20,22 +20,28 @@ object LoraLibrary {
 
     enum class Base(val label: String) {
         SD15("SD 1.5"), SDXL("SDXL"), FLUX("FLUX"), ZIMAGE("Z-Image"), QWEN("Qwen"), ANIMA("Anima"),
-        KREA2("Krea 2"), WAN("Wan"), MOSS("MOSS"), OTHER("Other");
+        ANIMA29("Anima 2.9B"), KREA2("Krea 2"), WAN("Wan"), MOSS("MOSS"), H3("MiniMax H3"), OTHER("Other");
 
         companion object {
             /** ⭐ The base a node's family takes LoRAs for — the filter a picker can offer first. */
             fun of(family: Family?): Base? = when (family) {
                 Family.SD15, Family.SD15_SWAP -> SD15
                 Family.SDXL, Family.SDXL_SWAP -> SDXL
-                Family.FLUX2 -> FLUX
+                // ⭐ FLUX.1 and FLUX.3 LoRAs carry FLUX's `single_blocks` names too (Telegram #8322: a chip for every model a
+                // LoRA works on).
+                Family.FLUX2, Family.FLUX1, Family.FLUX3 -> FLUX
                 Family.ZIMAGE -> ZIMAGE
                 Family.QWEN21 -> QWEN
                 Family.ANIMA_DIT -> ANIMA
                 Family.KREA2 -> KREA2
                 Family.WAN -> WAN
                 Family.MOSS -> MOSS
+                Family.H3IMAGE -> H3
                 else -> null
             }
+
+            /** ⭐ [of], but an Anima 2.9B model ([ModelSpec.anima29]) takes the 2.9B's LoRAs. */
+            fun of(spec: ModelSpec?): Base? = if (spec?.anima29 == true) ANIMA29 else of(spec?.family)
         }
     }
 
@@ -83,12 +89,16 @@ object LoraLibrary {
             // ⭐ MOSS-Image (a tester's ask, Saved #7155): its fused `proj.ffn_up_gate` / `proj.ffn_down`, which no
             // other family has (lodestones' DMD LoRA, read 2026-10-25); kohya writes them with underscores.
             "ffn_up_gate" in h -> Base.MOSS
+            // ⭐ MiniMax H3, video and Image (Telegram #8322): its fused `attn.qkv_proj` and `adaln_proj` (read off our two
+            // GGUFs, 2026-11-21); no other family the app runs names either.
+            "qkv_proj" in h && ("adaln_proj" in h || "attn.qkv_proj" in h || "attn_qkv_proj" in h) -> Base.H3
             "single_blocks" in h || "single_transformer_blocks" in h -> Base.FLUX
             "noise_refiner" in h || "context_refiner" in h -> Base.ZIMAGE
             "img_mlp" in h || "txt_mlp" in h -> Base.QWEN
             // ⚠ Anima (Cosmos blocks): the official LoRAs name `adaln_modulation_*`, kohya's
             // `lora_unet_blocks_N_cross_attn_k_proj` — checked on three real headers, 2026-10-13.
-            "adaln_modulation" in h || "cross_attn_k_proj" in h || "cross_attn.k_proj" in h -> Base.ANIMA
+            "adaln_modulation" in h || "cross_attn_k_proj" in h || "cross_attn.k_proj" in h ->
+                if (animaBlocks(h) > ANIMA_2B_BLOCKS) Base.ANIMA29 else Base.ANIMA
             // ⭐ Z-Image (Lumina-style `layers.N.attention` + `feed_forward`), Krea 2 (`attn.wq`,
             // `txtfusion`), Wan (`self_attn.q` + `ffn.0`, after Anima's `_proj` names). A miss is
             // fixable by hand ([setBase]: a user asked, Telegram #6322, 2026-10-15).
@@ -122,6 +132,17 @@ object LoraLibrary {
     private const val USE = "used:"
     private const val BASE = "base:"
     private val ZIMAGE_LAYERS = Regex("layers[._][0-9]+[._]attention[._]")
+
+    /**
+     * ⭐ An Anima LoRA's DiT depth: its highest `blocks.N` + 1, kohya's `blocks_N_` too, never the LLM adapter's own
+     * blocks. Over 2B's 28 is a 2.9B LoRA (40 blocks, [CustomModels.ANIMA_BLOCKS]); 28 or fewer is filed as 2B.
+     */
+    internal fun animaBlocks(h: String): Int = ANIMA_BLOCK.findAll(h)
+        .filterNot { m -> h.lastIndexOf('"', m.range.first).let { q -> "llm_adapter" in h.substring(q + 1, m.range.first) } }
+        .maxOfOrNull { it.groupValues[1].toInt() + 1 } ?: 0
+
+    private const val ANIMA_2B_BLOCKS = 28
+    private val ANIMA_BLOCK = Regex("(?<![a-z])blocks[._]([0-9]+)[._]")
 
     /** ⭐ The bases the user set by hand, by file name (the LoRA's ⋮). */
     fun baseOverrides(context: Context): Map<String, Base> =

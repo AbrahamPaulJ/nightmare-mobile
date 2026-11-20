@@ -5013,8 +5013,12 @@ private fun NodeLoraPicker(
         onReplacePrompt = onReplacePrompt,
         onDelete = onDeleteLora,
         library = library,
-        nodeBase = if (node.type in com.abrah.nightmare.WAN_TYPES) com.abrah.nightmare.LoraLibrary.Base.WAN
-        else com.abrah.nightmare.LoraLibrary.Base.of((type as? com.abrah.nightmare.SdSampler)?.family),
+        nodeBase = if (node.type == com.abrah.nightmare.npu.H3Node.name) com.abrah.nightmare.LoraLibrary.Base.H3
+        else if (node.type in com.abrah.nightmare.WAN_TYPES) com.abrah.nightmare.LoraLibrary.Base.WAN
+        else (type as? com.abrah.nightmare.SdSampler)?.family?.let { f ->
+            com.abrah.nightmare.ModelCatalog.byId(node.params["model"].orEmpty())?.takeIf { it.family == f }
+                ?.let { com.abrah.nightmare.LoraLibrary.Base.of(it) } ?: com.abrah.nightmare.LoraLibrary.Base.of(f)
+        },
         experimental = com.abrah.nightmare.LoraSources.Target.experimental((type as? com.abrah.nightmare.SdSampler)?.family),
         // ⭐ GitHub #51: below 0 where the engine takes it, the DiT families and Wan (`LoraSpec.MIN_NEGATIVE`).
         allowNegative = node.type in com.abrah.nightmare.WAN_TYPES ||

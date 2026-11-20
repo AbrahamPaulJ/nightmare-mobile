@@ -226,4 +226,18 @@ class BackendFailureReasonTest {
         feed(kreaLoraAbort.filterNot { "lora" in it })
         assertTrue(BackendProcess.assertReason()!!.contains("this model file's layout is not supported"))
     }
+
+    /** ⭐ GitHub #142's own lines (HONOR, SM8975): the DSP refused QNN's session; said for a person, not as err 4000. */
+    @Test
+    fun aRefusedQnnSessionIsExplained() {
+        feed(listOf(
+            "exec: /data/app/x/libstable_diffusion_core.so --type sd15npu",
+            "     0.0ms [ ERROR ] QnnDsp <E> remote work start failed with error: 1",
+            "     0.0ms [ ERROR ] QnnDsp <E> DspTransport.getHandle failed, error 0x0000001b",
+            "     0.0ms [ ERROR ] QnnDsp <E> Failed to load skel, error: 1002",
+            "   466.5ms [ ERROR ] Failed to create device",
+            "QnnDsp <E> loadRemoteSymbols failed with err 4000",
+        ))
+        assertEquals(BackendProcess.NPU_SESSION_REFUSED, BackendProcess.failureReason())
+    }
 }

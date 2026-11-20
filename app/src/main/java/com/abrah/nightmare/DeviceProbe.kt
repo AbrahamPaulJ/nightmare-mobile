@@ -47,6 +47,10 @@ object DeviceProbe {
         "SM8650" to 75, "SM8650P" to 75,    // 8 Gen 3
         "SM8750" to 79, "SM8750P" to 79,    // 8 Elite
         "SM8850" to 81, "SM8850P" to 81,    // 8 Elite Gen 5
+        // ⭐ MEASURED v85 on a OnePlus PYB110 (`--device_info`, 1.6.213, `docs/DEVICES.md` §4). Tabled so the v81 fallback is
+        // never learned on it: GitHub #142 (HONOR, 1.6.312) learned it from a QNN TRANSPORT refusal that no arch fixes, and
+        // the DiT engine, which ran on that phone (#62), was then handed v81's skel for a v85 DSP.
+        "SM8975" to 85,                     // 8 Elite Gen 6
         // ⭐ MEASURED on a Xiaomi 25053PC47G through `--device_info`, not read
         // off a spec sheet: v73 and 8 MB. It is the newest chip in the table and
         // the one that most looks like it should be higher.
@@ -492,11 +496,14 @@ object DeviceProbe {
         if (!soc.startsWith("SM")) return null
         val n = soc.dropWhile { !it.isDigit() }.takeWhile { it.isDigit() }.toIntOrNull()
             ?: return null
-        val newestKnown = SOC_TO_ARCH.keys.mapNotNull { partNumberOf(it) }.maxOrNull() ?: return null
+        // ⚠ Counted from the newest chip on a STAGED arch: the measured SM8975 (v85, a pack arch) is tabled, and counting
+        // from it made the SM8950 beside it "older than known" and an 8 Elite Gen 5 variant v85.
+        val staged = SOC_TO_ARCH.filterValues { it in STAGED_ARCHES }
+        val newestKnown = staged.keys.mapNotNull { partNumberOf(it) }.maxOrNull() ?: return null
         if (n < newestKnown) return null
         if (n / 100 == newestKnown / 100 + 1) return PACK_ARCHES.maxOrNull() ?: NEWER_THAN_STAGED
         if (n / 100 > newestKnown / 100) return NEWER_THAN_STAGED
-        return SOC_TO_ARCH.values.maxOrNull()
+        return staged.values.maxOrNull()
     }
 
     /** ⚠ Not an arch: "newer than every Skel this APK ships" — see [archFromPartNumber]. */

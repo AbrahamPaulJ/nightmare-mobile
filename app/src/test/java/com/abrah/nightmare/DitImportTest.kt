@@ -458,6 +458,14 @@ class DitImportTest {
         CustomModels.setMossSpeed(dir, true)
         File(dir, CustomModels.MOSS_FEW_STEP_MARK).writeBytes(ByteArray(0))
         assertEquals(null, spec().ownLora)
+        // ⭐ Telegram #9488: an import made before the mark, its NAME few-step, never takes the speed-up either.
+        val old = File(ModelCatalog.root(ctx), "moss-image-finalcut-6step-Q4_0").apply { mkdirs() }
+        File(old, CustomModels.DIT_GGUF).writeBytes(ByteArray(16))
+        File(old, CustomModels.MOSS_MARK).writeBytes(ByteArray(0))
+        File(old, CustomModels.PARTS_FROM_FILE).writeText("moss_image")
+        val oldSpec = CustomModels.scan(ctx).single { it.id == old.name }
+        assertEquals(null, oldSpec.ownLora)
+        assertEquals(1.0, oldSpec.cfg, 0.0)
     }
 
     /** ⚠ GitHub #94: the old LoRA goes only once the new one is whole, and only at the size we shipped. */

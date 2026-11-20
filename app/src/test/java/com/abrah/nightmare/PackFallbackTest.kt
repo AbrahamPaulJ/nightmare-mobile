@@ -43,7 +43,7 @@ class PackFallbackTest {
 
     @Test
     fun aGuessedV85FallsBackToV81OnceAndRemembers() {
-        onChip("SM8975")
+        onChip("SM8950")
         assertEquals(85, DeviceProbe.caps().arch)
         assertTrue(DeviceProbe.learnPackFallback(ctx, skel1002))
         assertEquals(DeviceProbe.PACK_FALLBACK_ARCH, DeviceProbe.caps().arch)
@@ -63,7 +63,7 @@ class PackFallbackTest {
         ) + skel1002
         assertEquals(85, DeviceProbe.dspPackArch(v85Stub))
         assertNull(DeviceProbe.dspPackArch(skel1002))
-        onChip("SM8975")
+        onChip("SM8950")
         assertFalse(DeviceProbe.unlearnPackFallback(ctx, v85Stub))
         assertTrue(DeviceProbe.learnPackFallback(ctx, skel1002))
         assertTrue(DeviceProbe.unlearnPackFallback(ctx, v85Stub))
@@ -73,6 +73,15 @@ class PackFallbackTest {
         DeviceProbe.loadHmxVerdict(ctx)
         assertFalse(DeviceProbe.learnPackFallback(ctx, skel1002))
         assertEquals(85, DeviceProbe.caps().arch)
+    }
+
+    /** ⭐ GitHub #142: the SM8975, measured v85, is tabled; a QNN transport refusal there never makes it v81. */
+    @Test
+    fun theMeasuredSm8975NeverFallsBack() {
+        onChip("SM8975")
+        assertFalse(DeviceProbe.learnPackFallback(ctx, skel1002))
+        assertEquals(85, DeviceProbe.caps().arch)
+        assertEquals("85", BackendProcess.ditArchEnv(DeviceProbe.caps()))
     }
 
     @Test

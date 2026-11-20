@@ -118,7 +118,11 @@ object BackendProcess {
         // ⚠⚠ Only the NEWEST launch's lines (everything after its `exec:`). The
         // buffer holds 400 lines across launches, and "the oldest error" taken
         // over all of them named an earlier launch's failure as this one's.
-        val raw = output.takeWhile { !it.startsWith(EXEC_PREFIX) }.lastOrNull {
+        val launch = output.takeWhile { !it.startsWith(EXEC_PREFIX) }
+        // ⭐ GitHub #61/#62/#142 (HONOR, SM8975): the DSP refused QNN's session before any model or arch mattered, and the
+        // report quoted `loadRemoteSymbols failed with err 4000`. The DiT engine opens its own session, and ran there.
+        if (launch.any { QNN_SESSION_REFUSED in it }) return NPU_SESSION_REFUSED
+        val raw = launch.lastOrNull {
             (it.contains("[ ERROR ]") || it.trimStart().startsWith("ERROR")) && HARMLESS_ERRORS.none { h -> h in it }
         } ?: return null
         // ⭐ QNN's own words for a phone with no Hexagon NPU (GitHub #85, a MediaTek MT6835), said for a person.
@@ -137,6 +141,12 @@ object BackendProcess {
     val processId: Int? get() = process?.let { System.identityHashCode(it) }
 
     private const val EXEC_PREFIX = "exec: "
+
+    internal const val QNN_SESSION_REFUSED = "DspTransport.getHandle failed"
+
+    internal const val NPU_SESSION_REFUSED =
+        "this phone refused an NPU session to the runtime the SD 1.5, SDXL and Anima models use (QNN), so they cannot " +
+            "start on it. The DiT models (FLUX.2, Z-Image, Anima DiT and the others) start the NPU another way, and run"
 
     internal const val NO_SNAPDRAGON =
         "this phone has no Snapdragon NPU, which this model needs. Nightmare's models run on Qualcomm Snapdragon chips only"
@@ -513,7 +523,13 @@ object BackendProcess {
      * the decode tile, so 16 = a 512 px encode: 384 MB, and a 160 MB decode (S25 forced to v75, 2026-11-04, 960x1280
      * edit at 2.75 GiB: renders, no seams; 32 left a 1,440 MB encode).
      */
-    internal fun lowArchVaeTile(spec: ModelSpec?): Int? = if (spec?.family == Family.FIBO2) 16 else null
+    internal fun lowArchVaeTile(spec: ModelSpec?): Int? = if (spec?.family in VAE16_TILED) 16 else null
+
+    /**
+     * ⭐ The families decoded by the FLUX.2 VAE in 512 px pieces below v79. ⚠ GitHub #141 (Z Fold6, 8 Gen 3): FLUX.3 at
+     * 1088x1088 sampled, then its VAE asked 2,657 MB of a 2,304 MB budget, and on 1.6.312 "1284 MB of working memory".
+     */
+    private val VAE16_TILED = setOf(Family.FIBO2, Family.FLUX3)
 
     /**
      * ⭐ A real 8 Gen 2 maps only ~2.5 GB per FastRPC session (v75: ~3.1). A Xiaomi SM8550 on 1.6.173
