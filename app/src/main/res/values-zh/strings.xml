@@ -557,7 +557,7 @@
     <string name="run_notice_title">正在运行 %1$s</string>
     <string name="run_notice_running">正在生成</string>
     <string name="results_import">导入图片</string>
-    <string name="results_imported">已导入 %1$d / %2$d。没有 Nightmare 信息的图片已跳过。</string>
+    <string name="results_imported">已导入 %1$d / %2$d。没有 Nightmare、ComfyUI 或 A1111 信息的图片已跳过。</string>
     <string name="flows_import_png_none">这张图片里没有 Nightmare 流程。只有开启写入后保存的图片才带有流程。</string>
     <string name="flows_import_png_foreign">已从 %1$s 图片读取：%2$s。它由 %3$s 生成；此流程使用这里选中的模型。</string>
     <string name="import_read_prompt">提示词</string>

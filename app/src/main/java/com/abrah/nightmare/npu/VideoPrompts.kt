@@ -78,6 +78,16 @@ non_diegetic_music:
 N/A - no score, no soundtrack, no musical arrangement at any point."""
 
     /**
+     * ⚠ A/B only (`h3_prompt_ab t2va`): [H3]'s scene in MiniMax's official text-to-video form, three fields (their
+     * `VIDEO_PROMPT_WRITING_GUIDE`; HexAnima teaches it, `docs/HEXANIMA-H3.md` §3).
+     */
+    const val H3_T2VA = """integrated_multimodal_description: [Shot 1] Live-action, warm morning light through the café windows, shallow depth of field. A static medium close-up at counter height frames a barista in her twenties with curly red hair tied back, wearing a green apron over a white shirt, behind the counter of a busy café, her face and mouth clearly visible. She sets down a cup with a leaf drawn in the foam, looks into the camera, and the barista with a bright, friendly, slightly husky voice (S1) says: <d>[English] Your flat white, made on a phone.</d> She smiles at the end.
+
+overall_soundscape: The hiss of the espresso machine, cups clinking on saucers and the soft murmur of customers, her voice close to the microphone.
+
+non_diegetic_music: N/A."""
+
+    /**
      * ⭐ MiniMax H3 Reference ([com.abrah.nightmare.canvas.H3REF]): the subject of Picture 1 (the wired reference) in a new
      * scene. The prompt that rendered her on a beach in the one-model A/B (`docs/MINIMAX-H3.md`), made general.
      */

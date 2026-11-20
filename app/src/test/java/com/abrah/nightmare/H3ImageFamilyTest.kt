@@ -47,4 +47,15 @@ class H3ImageFamilyTest {
         assertFalse(SdSampler.H3IMAGE.inpaint)
         assertEquals(Family.H3IMAGE, SdSampler.H3IMAGE.family)
     }
+
+    /** ⭐ An H3 Image checkpoint imports (the user, 2026-11-20); the H3 VIDEO model's header is not taken for one. */
+    @Test
+    fun anH3ImageCheckpointIsRecognised() {
+        val img = """{"video_patch_proj.weight":{},"token_refiner.blocks.0.attn.weight":{},"condition_proj.weight":{},""" +
+            """"final_layer.video_out.weight":{},"blocks.0.attn.qkv.weight":{}}"""
+        assertEquals(Family.H3IMAGE, CustomModels.ditFamilyOf(img))
+        val video = img.dropLast(1) + ""","audio_patch_proj.weight":{},"final_layer.audio_out.weight":{}}"""
+        assertEquals(null, CustomModels.ditFamilyOf(video))
+        assertEquals(CustomModels.DitVariant.H3IMAGE, CustomModels.DitVariant.defaultFor(Family.H3IMAGE))
+    }
 }

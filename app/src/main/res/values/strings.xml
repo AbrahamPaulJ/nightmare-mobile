@@ -584,7 +584,7 @@
     <string name="run_notice_title">Running %1$s</string>
     <string name="run_notice_running">Generating</string>
     <string name="results_import">Import pictures</string>
-    <string name="results_imported">Imported %1$d of %2$d. Pictures without Nightmare\'s info were skipped.</string>
+    <string name="results_imported">Imported %1$d of %2$d. Pictures with no Nightmare, ComfyUI or A1111 info were skipped.</string>
     <string name="flows_import_png_none">This picture has no Nightmare flow inside. Only pictures saved with \"Write how it was made\" on carry one.</string>
     <string name="flows_import_png_foreign">Read from a %1$s picture: %2$s. It was made with %3$s; this flow uses the model selected here.</string>
     <string name="import_read_prompt">the prompt</string>

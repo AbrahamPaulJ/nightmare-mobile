@@ -8154,7 +8154,17 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             var ok = 0
             for (uri in uris) runCatching {
                 val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@runCatching
-                val j = PngInfo.read(bytes.inputStream())[PngInfo.NIGHTMARE]?.let { org.json.JSONObject(it) } ?: return@runCatching
+                val chunks = PngInfo.read(bytes.inputStream())
+                val j = chunks[PngInfo.NIGHTMARE]?.let { org.json.JSONObject(it) } ?: run {
+                    // ⭐ GitHub #140: a ComfyUI or A1111 picture comes in too, as the Text to image flow its values make
+                    // ([pictureParamsFlow], the Flows import's own), so Reopen opens it with them.
+                    val r = com.abrah.nightmare.canvas.PictureParams.of(chunks) ?: return@runCatching
+                    val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching
+                    results.keep(bmp, null, pictureParamsFlow(r), nodeTypes, seed = r.seed?.toString(), model = r.model, prompt = r.prompt)
+                    bmp.recycle()
+                    ok++
+                    return@runCatching
+                }
                 val loaded = com.abrah.nightmare.canvas.workflowFromJson(j.getString("flow"))
                 val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching
                 val times = j.optJSONObject("times")?.let { t -> t.keys().asSequence().associateWith { k -> t.optLong(k) } }.orEmpty()

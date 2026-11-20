@@ -141,11 +141,17 @@ object H3Prompt {
 
     private val LASTS = Regex("""The target video lasts [0-9]+(\.[0-9]+)? seconds\.""")
 
+    /** The first field of MiniMax's official text-to-video prompt. */
+    const val OFFICIAL = "integrated_multimodal_description:"
+
     /** ⚠ Pure: [prompt] for a clip of [frames]: a structured one with its length set, a plain one wrapped. */
     fun build(prompt: String, frames: Int, fps: Int = 24, reference: Boolean = false): String {
         val text = prompt.trim()
         val lasts = "The target video lasts " + String.format(java.util.Locale.ROOT, "%.2f", frames.toDouble() / fps) + " seconds."
         if ("subject_definitions:" in text) return if (LASTS.containsMatchIn(text)) text.replace(LASTS, lasts) else text
+        // ⭐ MiniMax's official text-to-video form (`integrated_multimodal_description:`, `overall_soundscape:`,
+        // `non_diegetic_music:`; `docs/HEXANIMA-H3.md` §3): passed as written, never wrapped in our six sections.
+        if (OFFICIAL in text) return text
         val scene = sentence(text)
         return listOf(
             "subject_definitions:\nN/A - no speaking character is defined.",

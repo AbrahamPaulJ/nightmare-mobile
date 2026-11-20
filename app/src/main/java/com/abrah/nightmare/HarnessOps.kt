@@ -278,6 +278,13 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ …and with the picture as a REFERENCE (H3 Reference, Ref2VA, GitHub #82): `h3_ref`, the `h3_i2v` arg.
             "h3_ref" -> wanVideo(arg, i2v = true, type = com.abrah.nightmare.npu.H3Node.name, asReference = true)
             // ⚠ The one-model A/B: text-only and first-frame clips on the Ref2VA weights (no reference wired).
+            // ⭐ The prompt-form A/B (`docs/HEXANIMA-H3.md` §9 a2): `six|seed|seconds|WxH` renders [VideoPrompts.H3], our
+            // six sections; `t2va|…` the same scene in MiniMax's three official fields ([VideoPrompts.H3_T2VA]).
+            "h3_prompt_ab" -> {
+                val f = arg.orEmpty().split('|')
+                val p = if (f.firstOrNull() == "t2va") com.abrah.nightmare.npu.VideoPrompts.H3_T2VA else com.abrah.nightmare.npu.VideoPrompts.H3
+                wanVideo(listOf(p).plus(f.drop(1)).joinToString("|"), i2v = false, type = com.abrah.nightmare.npu.H3Node.name)
+            }
             "h3_video_refw", "h3_i2v_refw", "h3_video_refw_nolora" -> try {
                 com.abrah.nightmare.npu.H3Node.probeRefWeights = true
                 com.abrah.nightmare.npu.H3Node.probeNoOwnLora = op == "h3_video_refw_nolora"

@@ -141,6 +141,9 @@ object CustomModels {
     /** ⭐ Ours: an imported Fibo 2.0 checkpoint ([Family.FIBO2]); a Fibo GGUF read as Z-Image before 1.6.249. */
     const val FIBO2_MARK = "FIBO2"
 
+    /** ⭐ Ours: an imported MiniMax H3 Image checkpoint ([Family.H3IMAGE], the user 2026-11-20). */
+    const val H3IMAGE_MARK = "H3IMAGE"
+
     /**
      * ⭐ A MOSS import whose NAME says it is few-step (a DMD LoRA baked in: molbal's "Turbo GGUF (8 step)"): 8 steps at
      * CFG 1. Without it a MOSS import is taken for a base fine-tune (Moody Moss Mix: 25 steps, CFG 3), since nothing in
@@ -375,6 +378,7 @@ object CustomModels {
             Family.FLUX3.takeIf { File(dir, FLUX3_MARK).isFile },
             Family.FLUX1.takeIf { File(dir, FLUX1_MARK).isFile },
             Family.FIBO2.takeIf { File(dir, FIBO2_MARK).isFile },
+            Family.H3IMAGE.takeIf { File(dir, H3IMAGE_MARK).isFile },
         )
         // ⭐⭐⭐ **A DiT folder pushed over adb has no marker, and is a model
         // anyway** — [detectDit] reads the family out of `dit.safetensors`.
@@ -523,7 +527,8 @@ object CustomModels {
         // ⚠ Qwen and Krea 2 read their own directory only (backend 013/014);
         // a 9B's encoder is not the family's shared one.
         ownDitParts = klein9b || family == Family.QWEN21 || family == Family.KREA2 || family == Family.ANIMA_DIT ||
-            family == Family.MOSS || family == Family.FLUX3 || family == Family.FLUX1 || family == Family.FIBO2,
+            family == Family.MOSS || family == Family.FLUX3 || family == Family.FLUX1 || family == Family.FIBO2 ||
+            family == Family.H3IMAGE,
         // ⭐ An import that borrows an installed model's parts ([PARTS_FROM_FILE]): MOSS beside the built-in.
         partsFrom = runCatching { File(dir, PARTS_FROM_FILE).readText().trim() }.getOrNull()?.takeIf { isValidName(it) },
         // ⭐ The donor's 8-step LoRA ([mossSpeedOn]), found through [ModelSpec.ownLoraFile].
@@ -578,7 +583,7 @@ object CustomModels {
             Family.FLUX1 -> ModelCatalog.KREA2
             // ⭐ An imported Fibo 2.0 ([FIBO2_MARK]): Krea 2's launch; backend 049 adds the vision tower.
             Family.FIBO2 -> ModelCatalog.KREA2
-            // ⚠ Unreachable until an H3 Image import exists; the built-in's launch.
+            // ⭐ An imported MiniMax H3 Image ([H3IMAGE_MARK]): the built-in's launch, ClipProj beside it.
             Family.H3IMAGE -> ModelCatalog.KREA2
             // ⚠ Unreachable: nothing imports a video model ([ModelCatalog.WAN22]).
             Family.WAN -> ModelCatalog.WAN
@@ -1190,6 +1195,7 @@ object CustomModels {
         Family.FLUX3 -> FLUX3_MARK
         Family.FLUX1 -> FLUX1_MARK
         Family.FIBO2 -> FIBO2_MARK
+        Family.H3IMAGE -> H3IMAGE_MARK
         Family.QWEN21 -> "QWEN_IMAGE_2_1"
         else -> throw IllegalArgumentException("$family does not import a single weights file")
     }
@@ -1290,11 +1296,15 @@ object CustomModels {
             // ⭐ Fibo 2.0: the perceiver and the gated cross-attention (realrebelai's GGUF, read 2026-10-27). ⚠ Its DiT is
             // Z-Image's, so `noise_refiner.` and `attention.qkv.` are two Z-Image hits ([OUTRANKS]).
             Family.FIBO2 to listOf("perceiver.", "latent_queries", "cross_attention.", "cross_attn_gate"),
+            // ⭐ MiniMax H3 Image (our Q4_0's header, read 2026-11-21): H3's DiT without its audio branch. The video model
+            // has the same four plus `audio_patch_proj.` and `final_layer.audio_out`, and is not a picture model.
+            Family.H3IMAGE to listOf("video_patch_proj.", "token_refiner.", "condition_proj.", "final_layer.video_out"),
         )
         // ⚠ Anima only with `llm_adapter.`: Z-Image's own `t_embedder.` and `x_embedder.` are two Anima hits, and a KJ
         // Z-Image read as Z-Image AND Anima, so as nothing (2026-10-22, `docs/IMPORTS.md` §4).
         val hits = signatures.filter { (family, keys) ->
-            keys.count(header::contains) >= 2 && (family != Family.ANIMA_DIT || "llm_adapter." in header)
+            keys.count(header::contains) >= 2 && (family != Family.ANIMA_DIT || "llm_adapter." in header) &&
+                (family != Family.H3IMAGE || "audio_patch_proj." !in header)
         }.keys
         return (hits - hits.flatMap { OUTRANKS[it].orEmpty() }.toSet()).singleOrNull()
     }
@@ -1516,10 +1526,12 @@ object CustomModels {
         /** ⚠ Its OWN copy of Qwen's 6.6 GB of parts, always: Qwen's backend reads the model's folder only (013). */
         QWEN21(Family.QWEN21, "qwen_image_2_1_turbo", true),
         /** ⭐ Borrows an installed Fibo 2.0's encoder, vision tower, VAE and tokenizer, else its own copy (3.6 GB). */
-        FIBO2(Family.FIBO2, "fibo2_edit_turbo", true);
+        FIBO2(Family.FIBO2, "fibo2_edit_turbo", true),
+        /** ⭐ Borrows an installed H3 Image's encoder, ClipProj, VAE and tokenizer when it holds them whole, else its own copy. */
+        H3IMAGE(Family.H3IMAGE, "minimax_h3_image", true);
 
         /** ⭐ Launched as `krea2`, whose backend reads a donor's folder ([ModelSpec.partsFrom], backend 040). */
-        val lends: Boolean get() = this == MOSS || this == FLUX3 || this == FLUX1 || this == FIBO2
+        val lends: Boolean get() = this == MOSS || this == FLUX3 || this == FLUX1 || this == FIBO2 || this == H3IMAGE
 
         companion object {
             /** When the file's names say nothing, the tab's family decides. */
@@ -1532,6 +1544,7 @@ object CustomModels {
                 Family.FLUX1 -> FLUX1
                 Family.QWEN21 -> QWEN21
                 Family.FIBO2 -> FIBO2
+                Family.H3IMAGE -> H3IMAGE
                 else -> KLEIN_4B
             }
         }
@@ -1852,6 +1865,7 @@ object CustomModels {
         "flux1" to Family.FLUX1,
         "qwen21" to Family.QWEN21,
         "fibo2" to Family.FIBO2,
+        "h3image" to Family.H3IMAGE,
     )
 
     // ---- config.json -----------------------------------------------------

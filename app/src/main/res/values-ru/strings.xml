@@ -572,7 +572,7 @@
     <string name="run_notice_title">Идёт: %1$s</string>
     <string name="run_notice_running">Генерация</string>
     <string name="results_import">Импорт картинок</string>
-    <string name="results_imported">Импортировано %1$d из %2$d. Картинки без данных Nightmare пропущены.</string>
+    <string name="results_imported">Импортировано %1$d из %2$d. Картинки без данных Nightmare, ComfyUI или A1111 пропущены.</string>
     <string name="flows_import_png_none">В этой картинке нет потока Nightmare. Он есть только в картинках, сохранённых с включённой записью.</string>
     <string name="flows_import_png_foreign">Прочитано из картинки %1$s: %2$s. Она сделана моделью %3$s; этот поток использует модель, выбранную здесь.</string>
     <string name="import_read_prompt">промпт</string>

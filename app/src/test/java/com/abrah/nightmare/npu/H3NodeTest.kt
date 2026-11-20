@@ -333,4 +333,12 @@ class H3NodeTest {
         assertTrue(h3Image.licence != null && h3Image.licence != lic)
         assertTrue((ModelCatalog.all + ModelCatalog.video - spec - ModelCatalog.MINIMAX_H3_REF - h3Image).all { it.licence == null })
     }
+
+    /** ⭐ MiniMax's official three-field prompt is passed as written, never wrapped in our six sections. */
+    @Test
+    fun anOfficialPromptPassesThrough() {
+        val p = VideoPrompts.H3_T2VA
+        assertEquals(p, H3Prompt.build(p, 73))
+        assertTrue(H3Prompt.build("a cat on a sofa", 73).startsWith("subject_definitions:"))
+    }
 }
