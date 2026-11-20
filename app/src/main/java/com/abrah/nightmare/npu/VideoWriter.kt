@@ -33,6 +33,15 @@ import java.util.concurrent.atomic.AtomicReference
  */
 object VideoWriter {
 
+    /**
+     * ⭐ 0.5 bit per pixel per frame, and at least 4 Mbps: what HexAnima encodes H3 at (`docs/HEXANIMA-H3.md` §3). Ours
+     * was 0.15 (832x480 at 24 fps: 1.44 Mbps), and the hardware AVC smoothed a generated clip's fine detail away. A 5 s
+     * 832x480 clip is about 3 MB now.
+     */
+    internal fun bitRate(w: Int, h: Int, fps: Int): Int =
+        maxOf(4_000_000L, w.toLong() * h * fps / 2).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+
+
     private const val MIME = "video/avc"
     private const val I_FRAME_INTERVAL = 1          // seconds
     private const val TIMEOUT_US = 10_000L
@@ -158,9 +167,7 @@ object VideoWriter {
         val fmt = MediaFormat.createVideoFormat(MIME, w, h).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT,
                        MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            // ~0.15 bits per pixel per frame is generous for this content and keeps a
-            // 2 s clip small enough to share.
-            setInteger(MediaFormat.KEY_BIT_RATE, (w * h * fps * 0.15).toInt())
+            setInteger(MediaFormat.KEY_BIT_RATE, bitRate(w, h, fps))
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL)
         }

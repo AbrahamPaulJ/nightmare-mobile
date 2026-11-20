@@ -201,6 +201,22 @@ fun pageLabel(f: Family): String = when (f) {
     else -> f.label
 }
 
+/**
+ * ⭐ Where [spec] renders on THIS phone, for the card's pill (the user, 2026-11-21: a person cannot tell why a model is
+ * slow, or that a setting moves it). The same decisions the launch makes: [com.abrah.nightmare.DitGpu.runs] (and
+ * [com.abrah.nightmare.DitGpu.failed], which keeps the route on the CPU), [com.abrah.nightmare.BackendProcess.ditOnCpu],
+ * a chip with no Snapdragon NPU, the CPU runtimes. Pure on [caps], so a test can ask for any phone.
+ */
+internal fun routeOf(spec: com.abrah.nightmare.ModelSpec, caps: com.abrah.nightmare.DeviceProbe.Caps): String = when {
+    // ⭐ An imported SDXL MNN renders on the GPU where there is OpenCL (`guide/pages/features.md`), else the CPU.
+    spec.backendType == com.abrah.nightmare.ModelCatalog.SDXL_MNN -> if (com.abrah.nightmare.DitGpu.hasOpenCl) "GPU" else "CPU"
+    spec.runtime == com.abrah.nightmare.Runtime.CPU -> "CPU"
+    !spec.isDit -> if (caps.qualcomm) "NPU" else "CPU"
+    com.abrah.nightmare.DitGpu.runs(spec, caps) -> if (com.abrah.nightmare.DitGpu.failed) "CPU" else "GPU"
+    !caps.qualcomm || com.abrah.nightmare.BackendProcess.ditOnCpu(caps) -> "CPU"
+    else -> "NPU"
+}
+
 /** ⭐ The H3 video models, drawn on the MiniMax H3 page beside H3 Image, not on the Wan page ([pageLabel]). */
 internal fun isH3Video(spec: com.abrah.nightmare.ModelSpec): Boolean = spec.backendType == com.abrah.nightmare.ModelCatalog.H3
 
@@ -453,6 +469,8 @@ internal fun ModelCardV2(
                     ) {
                         Badge(spec.family.label, familyColor(spec.family))
                         Badge("${spec.native.width}×${spec.native.height}")
+                        // ⭐ NPU, GPU or CPU on this phone ([routeOf]).
+                        Badge(routeOf(spec, com.abrah.nightmare.DeviceProbe.caps()))
                         if (spec.isInpaintModel()) Badge(stringResource(R.string.mb_kind_inpaint), MaterialTheme.colorScheme.primary)
                         // ⭐ What a Swap conversion takes per render ([ModelFeatures]) — what its node offers.
                         if (spec.family == Family.SD15_SWAP || spec.family == Family.SDXL_SWAP) {

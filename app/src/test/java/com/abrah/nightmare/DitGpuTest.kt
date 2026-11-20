@@ -146,6 +146,17 @@ class DitGpuTest {
         assertEquals("off the route, a v69 phone gets no Klein build, as before", null, klein.buildFor(caps(69)))
     }
 
+    /** ⭐ The user's S21 FE (888, v68): the CPU route runs what an 8 Gen 1 runs; the NPU arch gate was refusing it. */
+    @Test
+    fun anEightEightEightGetsTheVSixtyNineModelsOnTheCpu() {
+        DitGpu.openClForTest = false
+        val s888 = DeviceProbe.Caps(arch = 68, vtcmMb = 8, measured = false, soc = "SM8350")
+        val anima = ModelCatalog.byId("anima_turbo_1_1")!!
+        assertTrue("an 888 runs DiT on the CPU", BackendProcess.ditOnCpu(s888))
+        assertTrue("Anima Turbo is offered on the 888", anima.buildFor(s888) != null)
+        assertEquals("Klein (v73 builds, GPU off) still is not", null, klein.buildFor(s888))
+    }
+
     @Test
     fun theEngineVariantFollowsTheRoute() {
         DitGpu.openClForTest = false

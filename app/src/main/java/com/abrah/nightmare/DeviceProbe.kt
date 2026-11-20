@@ -158,7 +158,9 @@ object DeviceProbe {
          * the feature and finds out by trying, which is recoverable. Hiding it
          * is not.
          */
-        val known: Boolean get() = measured || arch != FLOOR_ARCH || !qualcomm
+        // ⚠⚠ …or a chip the TABLE names: the 888 (SM8350) IS v68, the floor's own number, so it read as unknown and was
+        // denied the CPU and GPU routes every chip below v73 gets (the user's S21 FE, 2026-11-21: "needs v69").
+        val known: Boolean get() = measured || arch != FLOOR_ARCH || !qualcomm || soc.uppercase() in SOC_TO_ARCH
 
         /**
          * ⚠ A floor, never an allowlist: newer archs run older contexts — but only an arch the APK

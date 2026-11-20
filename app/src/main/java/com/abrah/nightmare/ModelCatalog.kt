@@ -720,6 +720,12 @@ data class ModelSpec(
         // ⭐ The GPU route ([DitGpu]): the GGUF Q4_0 build whatever the NPU's arch, the format the Adreno kernels run
         // (no FP8 there), and the one a v69 phone, which no DiT build here targets, can render at all.
         if (gpu && DitGpu.wanted(caps)) gpuBuild()?.takeIf { it.ramOk(caps) }?.let { return it }
+        // ⭐⭐ The CPU route ([BackendProcess.ditOnCpu]): a Snapdragon below v73 renders a DiT on the CPU, so the NPU's
+        // arch says nothing about it. The 888 (v68) was refused Anima Turbo and 2.9B as "needs v69" while the 8 Gen 1
+        // ran them on the same CPU route (the user's S21 FE, 2026-11-21). The v69-tier builds, on RAM alone.
+        if (isDit && caps.qualcomm && BackendProcess.ditOnCpu(caps)) {
+            builds.firstOrNull { it.minArch <= ModelCatalog.DIT_V69_MIN_ARCH && it.ramOk(caps) }?.let { return it }
+        }
         return builds.firstOrNull { it.runsOn(caps) }?.takeIf { !chipBlocked(caps) }
     }
 

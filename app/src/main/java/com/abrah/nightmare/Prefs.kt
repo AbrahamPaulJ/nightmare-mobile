@@ -78,7 +78,7 @@ object Prefs {
         heatPause = p.getBoolean(KEY_HEAT_PAUSE, false)
         runSound = p.getBoolean(KEY_RUN_SOUND, false)
         chipTemps = p.getBoolean(KEY_CHIP_TEMPS, false)
-        ditGpu = p.getBoolean(KEY_DIT_GPU, false)
+        ditGpu = p.getBoolean(KEY_DIT_GPU, ditGpuDefault())
         v69Npu = p.getBoolean(KEY_V69_NPU, false)
         ditTaesd = p.getBoolean(KEY_DIT_TAESD, true)
         ditSpectrum = p.getBoolean(KEY_DIT_SPECTRUM, false)
@@ -379,6 +379,16 @@ object Prefs {
     /** ⭐ The DiT models on the GPU on any phone ([DitGpu], the user 2026-10-31): opt-in; automatic below v73. */
     const val KEY_DIT_GPU = "dit_gpu"
 
+    /**
+     * ⭐ On by default where the NPU's matrix unit is broken: the 8s Gen 4 and 8s Gen 3 run a DiT on the NPU's vector
+     * units only, 25 to 45 times slower for big matmuls (GitHub #105), and a tester there found the GPU faster. The
+     * user's call (2026-11-21), so a person need not find the setting. Turned off by hand, it stays off.
+     */
+    fun ditGpuDefault(soc: String = DeviceProbe.soc()): Boolean = soc.uppercase().substringBefore(' ') in GPU_FIRST_SOCS
+
+    /** The 8s Gen 4 and 8s Gen 3 ([DeviceProbe.DIT_NO_HMX_SOCS], less the v69 chips, which take the GPU anyway). */
+    internal val GPU_FIRST_SOCS = setOf("SM8735", "SM8635")
+
     /** ⚠ [KEY_DIT_GPU] held in memory: [DitGpu.wanted] is read with no Context. Loaded by [load], set by [setLowRam]. */
     @Volatile var ditGpu: Boolean = false
         private set
@@ -519,7 +529,7 @@ object Prefs {
             heatPause = read(KEY_HEAT_PAUSE, false),
             runSound = read(KEY_RUN_SOUND, false),
             chipTemps = read(KEY_CHIP_TEMPS, false),
-            ditGpu = read(KEY_DIT_GPU, false),
+            ditGpu = read(KEY_DIT_GPU, ditGpuDefault()),
             v69Npu = read(KEY_V69_NPU, false),
             ditTaesd = read(KEY_DIT_TAESD, true),
             ditSpectrum = read(KEY_DIT_SPECTRUM, false),
