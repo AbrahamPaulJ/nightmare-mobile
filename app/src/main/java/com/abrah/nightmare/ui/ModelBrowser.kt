@@ -193,7 +193,16 @@ fun Family.isModern(): Boolean = dit
 fun Family.page(): Family = if (this == Family.ANIMA) Family.ANIMA_DIT else this
 
 /** ⭐ A page's name: the merged Anima page is just "Anima". */
-fun pageLabel(f: Family): String = if (f == Family.ANIMA_DIT) Family.ANIMA.label else f.label
+fun pageLabel(f: Family): String = when (f) {
+    Family.ANIMA_DIT -> Family.ANIMA.label
+    // ⭐ One MiniMax H3 page: the picture model and the video models (the user, 2026-11-20: "show MiniMax H3 video in
+    // family filters"); the Wan page keeps the Wan models.
+    Family.H3IMAGE -> "MiniMax H3"
+    else -> f.label
+}
+
+/** ⭐ The H3 video models, drawn on the MiniMax H3 page beside H3 Image, not on the Wan page ([pageLabel]). */
+internal fun isH3Video(spec: com.abrah.nightmare.ModelSpec): Boolean = spec.backendType == com.abrah.nightmare.ModelCatalog.H3
 
 private fun gb2(bytes: Long): String =
     String.format(java.util.Locale.ROOT, "%.2f GB", bytes / (1024.0 * 1024 * 1024))

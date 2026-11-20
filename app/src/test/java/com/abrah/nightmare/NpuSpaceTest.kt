@@ -51,9 +51,11 @@ class NpuSpaceTest {
 
         assertEquals("2.25", DeviceProbe.nextDitMapCap("2.75"))
         assertEquals("1.75", DeviceProbe.nextDitMapCap("2.25"))
-        assertEquals("the floor", "1.75", DeviceProbe.nextDitMapCap("2.0"))
-        assertNull(DeviceProbe.nextDitMapCap("1.75"))
-        assertNull(DeviceProbe.nextDitMapCap("1.5"))
+        assertEquals("1.5", DeviceProbe.nextDitMapCap("2.0"))
+        // ⭐ GitHub #144: Anima 2.9B on an SM8650 refused at the old 1.75 floor and ran at 1.25 (1.6.307).
+        assertEquals("1.25", DeviceProbe.nextDitMapCap("1.75"))
+        assertEquals("the floor", "1.25", DeviceProbe.nextDitMapCap("1.5"))
+        assertNull(DeviceProbe.nextDitMapCap("1.25"))
         assertNull("no budget, nothing to lower", DeviceProbe.nextDitMapCap(null))
         assertEquals("not under a block a lift was made for", "2.0", DeviceProbe.nextDitMapCap("2.25", needFloor = 2.0))
         assertNull(DeviceProbe.nextDitMapCap("2.0", needFloor = 2.0))
@@ -83,6 +85,16 @@ class NpuSpaceTest {
         assertEquals("past the top: no cap", "", DeviceProbe.liftedDitMapCap("2.25", 3047.72))
         assertNull("already fits", DeviceProbe.liftedDitMapCap("1.75", 1522.79))
         assertNull("nothing learned", DeviceProbe.liftedDitMapCap(null, 1522.79))
+    }
+
+    /** ⭐ GitHub #144: budgets are kept per model, so Anima learning 1.25 never strands Krea 2's 1.41 GB blocks. */
+    @Test
+    fun budgetsAreKeptPerModel() {
+        val m = mapOf("anima_silvermoon" to "1.25", "krea2_turbo" to "1.75", "zimage" to "")
+        val s = DeviceProbe.encodeDitMapCaps(m)
+        assertEquals(m, DeviceProbe.decodeDitMapCaps(s))
+        assertEquals(emptyMap<String, String>(), DeviceProbe.decodeDitMapCaps(null))
+        assertEquals("a bad entry is dropped", mapOf("a" to "1.5"), DeviceProbe.decodeDitMapCaps("a=1.5;b=x;=2"))
     }
 
     /** ⚠ GitHub #125: a map failure in an EARLIER render of the same launch does not lower the budget on a later death. */

@@ -5544,6 +5544,12 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         // the backend's constant, or no group at all ([SpillFill]): launch once
         // more with what the log taught. ⚠ Once — [SpillFill.learn] is false when
         // nothing is new, which is what makes this a retry and not a loop.
+        // ⭐ GitHub #145: the GPU's OpenCL would not start (a Mali): once more with the DiT on the CPU ([DitGpu.failed]).
+        if (DitGpu.learnFailed(ctx, BackendProcess.tail())) {
+            say("this phone's GPU would not start the engine. Starting again on the CPU: slower, but it runs")
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackendProcess.stop() }
+            return launchOnce(want, upscalerOnly)
+        }
         // ⭐ A v85 guess whose skel would not load (GitHub #62): once more on the V81 runtime the APK carries.
         if (DeviceProbe.learnPackFallback(ctx, BackendProcess.tail())) {
             say("this phone's NPU would not take the v85 runtime. Starting again as v${DeviceProbe.PACK_FALLBACK_ARCH}")

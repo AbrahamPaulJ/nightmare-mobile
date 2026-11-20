@@ -1242,7 +1242,7 @@ class SdSampler(
             DeviceProbe.caps().let { if (it.known) it.arch else 0 },
         )
         // ⭐ What this phone's NPU taught us (GitHub #97): a changed budget in the key is what relaunches the backend.
-        val capped = if (family.dit) BackendProcess.cappedDitBudget(budget, DeviceProbe.ditMapCap) else budget
+        val capped = if (family.dit) BackendProcess.cappedDitBudget(budget, DeviceProbe.ditMapCapFor(key.model)) else budget
         val withBudget = (if (capped == null) key else key.copy(memoryBudget = capped))
             .let { k -> if (takesShift(family)) k.copy(flowShift = shiftOf(p)) else k }
         return if (editOnNpu(family, pictures, ModelCatalog.byId(key.model), DeviceProbe.caps())) withBudget.copy(npu = true) else withBudget

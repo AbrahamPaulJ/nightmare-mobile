@@ -918,6 +918,7 @@ object BackendProcess {
             // ⚠ A self-test line from a previous launch must not relaunch this one.
             hmxFailedThisLaunch = false
             launchedDitBudget = null
+            launchedDitModel = modelId.takeUnless { upscalerOnly }
             // ⚠ Nor its arch / hwinfo / HMX lines reach this launch's error report.
             engineNpu = emptyMap()
             try {
@@ -1424,6 +1425,10 @@ object BackendProcess {
     @Volatile
     private var launchedDitBudget: String? = null
 
+    /** ⭐ This launch's model: a budget is learned and lifted per model (GitHub #144). Kept after the process dies. */
+    @Volatile
+    private var launchedDitModel: String? = null
+
     /**
      * ⭐ The NPU refused a mapping (GitHub #97): below v79 the next DiT launch gets a smaller budget ([DeviceProbe.ditMapCap]),
      * and the changed [ContextKey.memoryBudget] relaunches it ([cappedDitBudget]). Null when there is nothing lower to try:
@@ -1433,13 +1438,13 @@ object BackendProcess {
         val ctx = appContext ?: return null
         val caps = DeviceProbe.caps()
         if (!caps.known || caps.arch >= ModelCatalog.DIT_MIN_ARCH) return null
-        return DeviceProbe.learnDitMapLimit(ctx, launchedDitBudget)
+        return DeviceProbe.learnDitMapLimit(ctx, launchedDitModel, launchedDitBudget)
     }
 
     /** ⭐ A block needed more than the learned cap ([DeviceProbe.liftDitMapCap]); the changed budget relaunches. */
     fun liftDitMapCap(needMb: Double): String? {
         val ctx = appContext ?: return null
-        return DeviceProbe.liftDitMapCap(ctx, needMb)
+        return DeviceProbe.liftDitMapCap(ctx, launchedDitModel, needMb)
     }
 
     /** ⚠ Pure: the smaller of a launch's own budget and what this phone taught us; [cap] alone stands in for no budget. */

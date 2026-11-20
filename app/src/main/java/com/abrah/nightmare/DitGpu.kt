@@ -33,6 +33,34 @@ object DitGpu {
     fun runs(spec: ModelSpec?, caps: DeviceProbe.Caps = DeviceProbe.caps()): Boolean =
         spec != null && spec.gpu && wanted(caps)
 
+    /**
+     * ⭐⭐ This phone's GPU would not start ggml's OpenCL backend ([openClFailed]), so the route runs on the CPU: the same
+     * engine and Q4_0 build, no download. ⚠ GitHub #145, a Pixel 6 Pro (Tensor, Mali): `ggml_opencl: Mali reported invalid
+     * subgroup size=0`, then `backend 'GPUOpenCL' was not found` and every DiT launch exited 1. Kept per phone.
+     */
+    @Volatile
+    var failed: Boolean = false
+        private set
+
+    private const val PREFS = "device_probe"
+    private const val FAILED_KEY = "gpu_route_failed"
+
+    fun load(context: Context) {
+        failed = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(FAILED_KEY, false)
+    }
+
+    /** ⚠ Pure: a launch log whose GPU backend never came up. */
+    fun openClFailed(tail: List<String>): Boolean = tail.any { "backend 'GPUOpenCL' was not found" in it }
+
+    /** ⭐ Remember [failed] after a launch that died of [openClFailed]. True when NEW: the caller relaunches once. */
+    fun learnFailed(context: Context, tail: List<String>): Boolean {
+        if (failed || !openClFailed(tail)) return false
+        failed = true
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(FAILED_KEY, true).apply()
+        android.util.Log.w("DitGpu", "the GPU's OpenCL would not start: DiT models run on the CPU from now on")
+        return true
+    }
+
     /** The DiT on the GPU; the text encoder and the (tiny) decoder on the CPU, as measured. */
     const val BACKEND = "diffusion=GPUOpenCL,te=CPU,vae=CPU"
 
@@ -132,7 +160,7 @@ object DitGpu {
     fun launchEnv(context: Context, spec: ModelSpec?, caps: DeviceProbe.Caps = DeviceProbe.caps()): Map<String, String> {
         if (!runs(spec, caps)) return emptyMap()
         return buildMap {
-            put("NM_DIT_BACKEND", BACKEND)
+            put("NM_DIT_BACKEND", if (failed) BlankDiagnosis.CPU_ALL else BACKEND)
             putAll(envFor(spec, caps.soc))
             val tae = spec?.let(::taeFor)?.let { taeFile(context, it) }
             if (Prefs.ditTaesd && tae != null && tae.isFile) put("NM_DIT_TAESD", tae.absolutePath)

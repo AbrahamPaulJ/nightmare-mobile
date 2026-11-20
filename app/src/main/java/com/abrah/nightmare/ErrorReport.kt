@@ -272,7 +272,7 @@ object ErrorReport {
                     if (e.isEmpty()) "" else " · engine says ${listOfNotNull(e["arch"], e["hwinfo"], e["hmx"]).joinToString(", ")}"
                 } +
                 // ⭐ The budget this phone's NPU taught us (GitHub #97), so a report shows why its DiT streams.
-                (DeviceProbe.ditMapCap?.let { " · NPU budget learned: $it GiB" } ?: ""),
+                (DeviceProbe.ditMapCapFor(spec?.id ?: modelId)?.let { " · NPU budget learned: $it GiB" } ?: ""),
             ramTotal = DeviceProbe.totalRamBytes(),
             ramAvailable = availableRamBytes(),
             storageFree = runCatching { ModelStorage.root(context).usableSpace }.getOrDefault(0L),

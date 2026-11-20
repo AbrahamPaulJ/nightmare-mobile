@@ -442,7 +442,14 @@ fun ModelsScreen(
         // this phone cannot run in a collapsed section of their own (the user:
         // *"so user only sees whats supported"*). A family opens its own page.
         // ⭐ PAGES, not families: Anima's two runtimes share one ([page]).
-        val families = Family.entries.filter { f -> rows.any { it.spec.family.page() == f } || (f == Family.WAN && wans.isNotEmpty()) }
+        val h3Videos = wans.filter { isH3Video(it.spec) }
+        val wanOnly = wans.filterNot { isH3Video(it.spec) }
+        fun pageCount(f: Family): Int = when (f) {
+            Family.WAN -> wanOnly.size
+            Family.H3IMAGE -> rows.count { it.spec.family.page() == f } + h3Videos.size
+            else -> rows.count { it.spec.family.page() == f }
+        }
+        val families = Family.entries.filter { f -> pageCount(f) > 0 }
         // ⚠ With no checkpoints but the video models, opens on Video — what the
         // family tabs did when the video tab was page 0 (a real state: a phone
         // that downloaded only the video models).
@@ -634,14 +641,14 @@ fun ModelsScreen(
                     if (fp == null) {
                         item { SearchBox(query, { query = it }) }
                         item {
-                            FamilyMenu(families.map { f -> f to (if (f == Family.WAN) wans.size else rows.count { it.spec.family.page() == f }) }) {
+                            FamilyMenu(families.map { f -> f to pageCount(f) }) {
                                 familyPage = it
                                 sub = SubKind.ALL
                             }
                         }
                     } else {
                         item {
-                            FamilyHeader(fp, if (fp == Family.WAN) wans.size else rows.count { it.spec.family.page() == fp }, familyNote(fp)) { familyPage = null }
+                            FamilyHeader(fp, pageCount(fp), familyNote(fp)) { familyPage = null }
                         }
                         // ⚠ Sub-chips only when there is a choice to make.
                         val subs = SubKind.entries.filter { s ->
@@ -653,9 +660,16 @@ fun ModelsScreen(
                     if (fp == Family.WAN) {
                         videoModelItems(
                             null, busy, {}, onCancel, {}, {},
-                            wans, onInstall, { deleting = it }, onUseWan, showNote = false,
+                            wanOnly, onInstall, { deleting = it }, onUseWan, showNote = false,
                         )
                         return@LazyColumn
+                    }
+                    // ⭐ The MiniMax H3 page: its video models, then H3 Image below.
+                    if (fp == Family.H3IMAGE && h3Videos.isNotEmpty()) {
+                        videoModelItems(
+                            null, busy, {}, onCancel, {}, {},
+                            h3Videos, onInstall, { deleting = it }, onUseWan, showNote = false,
+                        )
                     }
                     // ⭐ The Anima page in two parts, DiT first (the user, 2026-10-14).
                     val groups: List<Pair<Int?, List<ModelRow>>> = if (fp == Family.ANIMA_DIT) {

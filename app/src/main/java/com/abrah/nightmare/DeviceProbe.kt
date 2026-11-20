@@ -54,6 +54,10 @@ object DeviceProbe {
         // ⭐ v73 with UNDER 8 MB of VTCM (`docs/DEVICES.md` §1), so not in [SOC_HAS_8MB_VTCM]: SD 1.5 keeps
         // `_min`; the v73 DiT builds take it as alpha ([ModelCatalog.DIT_V73_MIN_VTCM_MB], 2026-10-17).
         "SM8635" to 73,                     // 8s Gen 3
+        // ⭐ A tester's 7+ Gen 3 (Telegram #9390-9405, 2026-11-19): v73, and it ran the NPU route; offered what an 8 Gen 2
+        // runs (the user, Saved #8264). Its VTCM is not known, so not in [SOC_HAS_8MB_VTCM]: the DiT kernels read it off
+        // the hardware, and an HMX that fails the self-test is learned off ([recordHmxSelfTest]).
+        "SM7675" to 73,                     // 7+ Gen 3
     )
 
     /**
@@ -192,6 +196,8 @@ object DeviceProbe {
                 prefs.edit().putString(DIT_MAP_CAP_KEY, it).apply()
             } else stored
         }
+        ditMapCaps = decodeDitMapCaps(prefs.getString(DIT_MAP_CAPS_KEY, null))
+        DitGpu.load(context)
         packFallback = prefs.getInt(PACK_FALLBACK_KEY, 0).takeIf { it > 0 }
         packConfirmed = prefs.getInt(PACK_CONFIRMED_KEY, 0).takeIf { it > 0 }
     }
@@ -275,12 +281,13 @@ object DeviceProbe {
         internal set
 
     /**
-     * ⚠ Pure: the budget after a map failure under [launched], or null when it cannot go lower. [needFloor] (GiB) is the
+     * ⚠ Pure: the budget after a map failure under [launched], or null when it cannot go lower than
+     * [DIT_MAP_LEARN_FLOOR_GIB]. [needFloor] (GiB) is the
      * biggest single block a lift was made for ([liftDitMapCap]): stepping under it again would only fail the other way.
      */
     internal fun nextDitMapCap(launched: String?, needFloor: Double = 0.0): String? {
         val v = launched?.toDoubleOrNull() ?: return null
-        val floor = maxOf(DIT_MAP_FLOOR_GIB, needFloor)
+        val floor = maxOf(DIT_MAP_LEARN_FLOOR_GIB, needFloor)
         if (v <= floor) return null
         return maxOf(v - DIT_MAP_STEP_GIB, floor).toString()
     }
@@ -298,43 +305,78 @@ object DeviceProbe {
         return if (v > DIT_MAP_TOP_GIB) "" else v.toString()
     }
 
-    /** The biggest block a lift was made for this session, GiB: [nextDitMapCap] does not step under it again. */
+    /**
+     * ⭐⭐ The budget each MODEL taught us, over the phone's [ditMapCap] (GitHub #144). One phone-wide figure ping-ponged:
+     * Anima 2.9B maps 36 MB blocks and needed 1.25 GiB on an HONOR SM8650 (1.6.307 worked there), while a Krea 2 block
+     * needs 1.41 GB, so 1.6.308's fixed 1.75 floor for Krea 2 broke Anima ("fastrpc_mmap 0x1a" at block 4 of 42).
+     * Learned down ([learnDitMapLimit]) and lifted ([liftDitMapCap]) per model id; kept per phone, like [hmxBad].
+     */
     @Volatile
-    private var ditNeedFloor = 0.0
+    private var ditMapCaps: Map<String, String> = emptyMap()
+
+    /** The biggest block a lift was made for, GiB, per model, this session: [nextDitMapCap] does not step under it again. */
+    private val ditNeedFloors = java.util.concurrent.ConcurrentHashMap<String, Double>()
+
+    /** ⭐ The budget for [model]: its own learned one ("" = lifted past the top: no cap), else the phone's, else null. */
+    fun ditMapCapFor(model: String?): String? {
+        val own = model?.let { ditMapCaps[it] } ?: return ditMapCap
+        return own.ifEmpty { null }
+    }
+
+    private fun saveDitMapCap(context: Context, model: String, cap: String) {
+        ditMapCaps = ditMapCaps + (model to cap)
+        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(DIT_MAP_CAPS_KEY, encodeDitMapCaps(ditMapCaps)).apply()
+    }
+
+    /** ⚠ Pure: `id=cap;id=cap` ("" is a lift past the top). Model ids are `[a-z0-9_.-]`. */
+    internal fun encodeDitMapCaps(m: Map<String, String>): String = m.entries.joinToString(";") { "${it.key}=${it.value}" }
+
+    internal fun decodeDitMapCaps(s: String?): Map<String, String> =
+        s.orEmpty().split(';').mapNotNull { e ->
+            val k = e.substringBefore('=', "").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val v = e.substringAfter('=')
+            if (v.isNotEmpty() && v.toDoubleOrNull() == null) null else k to v
+        }.toMap()
 
     /**
-     * ⭐ The learned cap was smaller than one block of the model (the engine's "cannot make enough memory available …
+     * ⭐ The learned cap was smaller than one block of [model] (the engine's "cannot make enough memory available …
      * need X MB … budget"): raise it so that block fits ([liftedDitMapCap]). Returns the new budget ("" = no cap), or null.
      */
-    fun liftDitMapCap(context: Context, needMb: Double): String? {
-        val next = liftedDitMapCap(ditMapCap, needMb) ?: return null
-        ditNeedFloor = maxOf(ditNeedFloor, needMb / 1024.0)
-        ditMapCap = next.ifEmpty { null }
-        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().apply {
-            if (next.isEmpty()) remove(DIT_MAP_CAP_KEY) else putString(DIT_MAP_CAP_KEY, next)
-        }.apply()
-        Log.w(TAG, "a DiT block needs ${needMb.toInt()} MB, over the learned cap: DiT budget ${next.ifEmpty { "uncapped" }} from now on")
+    fun liftDitMapCap(context: Context, model: String?, needMb: Double): String? {
+        val next = liftedDitMapCap(ditMapCapFor(model), needMb) ?: return null
+        val key = model ?: "?"
+        ditNeedFloors.merge(key, needMb / 1024.0, ::maxOf)
+        saveDitMapCap(context, key, next)
+        Log.w(TAG, "a $key block needs ${needMb.toInt()} MB, over the learned cap: its DiT budget ${next.ifEmpty { "uncapped" }} from now on")
         return next
     }
 
-    /** ⭐ Remembers [nextDitMapCap]. Repeating it for the same launch changes nothing. Returns the new budget, or null. */
-    fun learnDitMapLimit(context: Context, launched: String?): String? {
-        val next = nextDitMapCap(launched, ditNeedFloor) ?: return null
-        ditMapCap = next
-        context.getSharedPreferences(HMX_PREFS, Context.MODE_PRIVATE).edit().putString(DIT_MAP_CAP_KEY, next).apply()
-        Log.w(TAG, "the NPU refused a mapping on ${soc()}: DiT budget $next GiB from now on (was $launched)")
+    /** ⭐ Remembers [nextDitMapCap] for [model]. Repeating it for the same launch changes nothing. Returns the new budget, or null. */
+    fun learnDitMapLimit(context: Context, model: String?, launched: String?): String? {
+        val key = model ?: "?"
+        val next = nextDitMapCap(launched, ditNeedFloors[key] ?: 0.0) ?: return null
+        saveDitMapCap(context, key, next)
+        Log.w(TAG, "the NPU refused a mapping on ${soc()} for $key: its DiT budget $next GiB from now on (was $launched)")
         return next
     }
 
     /**
-     * ⚠ Below this, one block no longer fits: Z-Image's prelude needs 1.52 GB at 1024², a Krea 2 block 1.41 GB (it was 1.25
-     * and stranded three 8 Gen 3 phones, Saved #8083 / GitHub #123). A model's own smaller budget still wins
-     * ([BackendProcess.cappedDitBudget]: Klein 9B's v73 1.5): this floors only what a phone LEARNS.
+     * ⚠ A PHONE-wide cap stored under this is lifted to it at start: three 8 Gen 3 phones had learned 1.25 GiB from one
+     * model and every other model then failed (Z-Image's prelude needs 1.52 GB at 1024², a Krea 2 block 1.41 GB; Saved
+     * #8083 / GitHub #123). A model's own smaller budget still wins ([BackendProcess.cappedDitBudget]: Klein 9B's v73 1.5).
      */
     internal const val DIT_MAP_FLOOR_GIB = 1.75
+
+    /**
+     * ⭐ How low ONE model may learn: Anima 2.9B ran at 1.25 GiB on the SM8650 that refused it at 1.75 (GitHub #144). A model
+     * whose block needs more is lifted back over it ([liftDitMapCap]), and only that model.
+     */
+    internal const val DIT_MAP_LEARN_FLOOR_GIB = 1.25
     private const val DIT_MAP_TOP_GIB = 2.75
     private const val DIT_MAP_STEP_GIB = 0.5
     private const val DIT_MAP_CAP_KEY = "dit_map_cap_gib"
+    private const val DIT_MAP_CAPS_KEY = "dit_map_cap_by_model"
 
     /** ⚠ Pure: "HMX self-test WRONG (zeros), rel-err 1.0000…" or "…FAILED" is a failure; ok / skipped are not. */
     fun hmxSelfTestFailed(verdict: String): Boolean {
