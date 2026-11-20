@@ -58,4 +58,16 @@ class H3ImageFamilyTest {
         assertEquals(null, CustomModels.ditFamilyOf(video))
         assertEquals(CustomModels.DitVariant.H3IMAGE, CustomModels.DitVariant.defaultFor(Family.H3IMAGE))
     }
+
+    /** ⭐ Telegram #8301: H3 Image takes sides up to 4096; every other DiT stays at 2048. */
+    @Test
+    fun h3ImageGoesTo4096AndNothingElseDoes() {
+        val h3 = ModelCatalog.byId("minimax_h3_image")!!
+        assertEquals(4096, ModelCatalog.ditMax(h3.family))
+        assertEquals(4096, ModelCatalog.keptSize(h3, 4096, 4096).width)
+        val krea = ModelCatalog.byId("krea2_turbo")!!
+        assertEquals(2048, ModelCatalog.keptSize(krea, 4096, 4096).width)
+        assertEquals(4096, SdSampler.H3IMAGE.widgets.first { it.name == "width" }.max?.toInt())
+        assertEquals(2048, SdSampler.KREA2.widgets.first { it.name == "width" }.max?.toInt())
+    }
 }

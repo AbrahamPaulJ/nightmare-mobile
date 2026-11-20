@@ -1196,7 +1196,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun pictureParamsFlow(r: com.abrah.nightmare.canvas.PictureParams.Read): com.abrah.nightmare.canvas.Workflow {
         val spec = SelectedModel.spec
-        val grid: ((Int) -> Int)? = if (spec.isDit) { v -> ((v + 32) / 64 * 64).coerceIn(512, 2048) } else null
+        val grid: ((Int) -> Int)? = if (spec.isDit) { v -> ModelCatalog.ditSnap(v, ModelCatalog.ditMax(spec.family)) } else null
         return com.abrah.nightmare.canvas.PictureParams.apply(
             com.abrah.nightmare.canvas.defaultWorkflow(), r, ModelCatalog.schedulersFor(spec.family), grid,
         )

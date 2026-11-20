@@ -1101,7 +1101,7 @@ data class ModelSpec(
      * legal DiT size but one. ⇒ Ask this, never the list.
      */
     fun serves(context: Context, res: Res): Boolean =
-        if (isDit && !fixedSizes) ModelCatalog.ditSupported(res.width) && ModelCatalog.ditSupported(res.height)
+        if (isDit && !fixedSizes) ModelCatalog.ditMax(family).let { m -> ModelCatalog.ditSupported(res.width, m) && ModelCatalog.ditSupported(res.height, m) }
         else res in availableResolutions(context)
 
     /**
@@ -1110,7 +1110,7 @@ data class ModelSpec(
      * picked from when the real rule is a range.
      */
     fun sizesServedText(context: Context): String =
-        if (isDit && !fixedSizes) "any size ${ModelCatalog.DIT_MIN}–${ModelCatalog.DIT_MAX} in ${ModelCatalog.DIT_STEP}-pixel steps"
+        if (isDit && !fixedSizes) "any size ${ModelCatalog.DIT_MIN}–${ModelCatalog.ditMax(family)} in ${ModelCatalog.DIT_STEP}-pixel steps"
         else availableResolutions(context).joinToString(", ")
 
     /** What this model occupies on disk, or 0 when it is not installed. */
@@ -1288,6 +1288,15 @@ object ModelCatalog {
     const val DIT_STEP = 64
 
     /**
+     * ⭐ MiniMax H3 Image's ceiling: 4096 a side (Telegram #8301/#8315, 2026-11-20: "designed in native 4K"). Every other
+     * DiT keeps [DIT_MAX]. ⚠ See `docs/MINIMAX-H3.md` §7 for what 4096x4096 costs on the S25.
+     */
+    const val H3_IMAGE_MAX = 4096
+
+    /** ⭐ The largest side [family] renders on the grid. */
+    fun ditMax(family: Family?): Int = if (family == Family.H3IMAGE) H3_IMAGE_MAX else DIT_MAX
+
+    /**
      * ⭐ The grid, as ONE function — the sampler snaps a request to it and the
      * size control only ever writes values already on it.
      *
@@ -1296,9 +1305,9 @@ object ModelCatalog {
      * is. Two such places stop agreeing, and the symptom is a picture that comes
      * back a different size from the one the sheet says.
      */
-    fun ditSnap(v: Int): Int =
+    fun ditSnap(v: Int, max: Int = DIT_MAX): Int =
         (((v - DIT_MIN) + DIT_STEP / 2) / DIT_STEP * DIT_STEP + DIT_MIN)
-            .coerceIn(DIT_MIN, DIT_MAX)
+            .coerceIn(DIT_MIN, max)
 
     /**
      * ⭐⭐ The size a node KEEPS when its model changes with "keep my settings" (GitHub #33, the
@@ -1307,7 +1316,7 @@ object ModelCatalog {
      * that shape, then nearest that area, because it renders its own size whatever is asked.
      */
     fun keptSize(spec: ModelSpec, w: Int, h: Int): Res {
-        if (spec.isDit && !spec.fixedSizes) return Res(ditSnap(w), ditSnap(h))
+        if (spec.isDit && !spec.fixedSizes) return ditMax(spec.family).let { m -> Res(ditSnap(w, m), ditSnap(h, m)) }
         val aspect = w.toDouble() / h.coerceAtLeast(1)
         val area = w.toDouble() * h
         return spec.resolutions.minWithOrNull(
@@ -1323,8 +1332,8 @@ object ModelCatalog {
      * Rewriting a saved workflow's size silently is the thing the 2026-09-19
      * "picture came back a different size" report was about.
      */
-    fun ditSupported(v: Int): Boolean =
-        v in DIT_MIN..DIT_MAX && (v - DIT_MIN) % DIT_STEP == 0
+    fun ditSupported(v: Int, max: Int = DIT_MAX): Boolean =
+        v in DIT_MIN..max && (v - DIT_MIN) % DIT_STEP == 0
 
     /**
      * ⭐⭐⭐ **The size nearest [aspect] that a DiT model can render** — both
@@ -2925,6 +2934,26 @@ object ModelCatalog {
                 // ⭐ Ours: realrebelai's Q4_0 with its BF16 cross-attention, perceiver and noise refiner also Q4_0 (4.87 GB, not
                 // 6.59): the same edit within 29 dB, and 11.4 s a step on the S25 against 15 (`docs/FIBO2.md` §2).
                 RemoteFile(HF + "AbrahamPJ/fibo2-edit-turbo-q4_0-gguf/resolve/main/fibo2_edit_turbo-q4_0.gguf", "dit.gguf", 4_870_390_432L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-4B-Instruct-f16.gguf", "llm_vision.gguf", 836_180_256L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ),
+        // ⭐ Fibo 2.0 Dev (Bria, 8B, non-commercial; the user's call 2026-11-21, Saved #8329): the base model, text to image
+        // and editing, 30 steps at CFG 5 (realrebelai's and molbal's cards: 30-50 at ~5). Ours: realrebelai's Q4_0 made
+        // all-Q4_0 as Edit Turbo's (`../LocalDream/fibo/requant_q4.py`, 4.87 GB, 2026-11-21). The same architecture, so
+        // the same launch (`dit/056`, backend 049); it BORROWS Edit Turbo's vision tower, VAE, encoder and tokenizer when
+        // Edit Turbo holds them ([ModelSpec.partsFrom]; a part Edit Turbo itself borrowed from Krea 2 is fetched here).
+        dit(
+            "fibo2_dev", "Fibo 2.0 Dev", Family.FIBO2, KREA2, steps = 30, cfg = 5.0,
+            ownDitParts = true,
+            partsFrom = "fibo2_edit_turbo",
+            minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+            minArch = DIT_GGML_MIN_ARCH,
+            prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
+            files = listOf(
+                RemoteFile(HF + "AbrahamPJ/fibo2-dev-q4_0-gguf/resolve/main/fibo2_dev-q4_0.gguf", "dit.gguf", 4_870_390_432L),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-4B-Instruct-f16.gguf", "llm_vision.gguf", 836_180_256L),
                 RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),

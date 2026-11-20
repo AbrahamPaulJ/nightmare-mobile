@@ -645,7 +645,7 @@
     <string name="models_family_ideogram">约 11.6 GB。12 GB 及以上内存的手机，8 Elite 或更新芯片。最擅长在图中写出清晰可读的文字：招牌、海报、标签。每次都会应用 8 步加速。8 Elite 上 768x768 约 5.5 分钟。仅文生图。仅限非商业用途（Ideogram 许可）。请使用 Wi-Fi。</string>
     <string name="models_family_flux3">约 6.2 GB。8 Gen 3 或更新芯片。Black Forest Labs 最新的图像模型：细节清晰，紧跟提示词，16 步。8 Elite 上 512x512 约 45 秒，1024x1024 约 2 分钟。仅文生图。采用 FLUX Kommunity License 许可。请使用 Wi-Fi。</string>
     <string name="models_family_flux1">约 10.8 GB。12 GB 及以上手机，8 Elite 或更新芯片。Black Forest Labs 的 FLUX.1 dev：512x512 约 4 分钟，1024x1024 约 6 分钟，20 步。仅文生图。仅限非商业用途。</string>
-    <string name="models_family_fibo2">约 8.4 GB。8 Gen 3 或更新芯片，12 GB 内存。Bria 的 Fibo 2.0 Edit：连入一张图片并写下要修改的内容，4 步完成。图片其余部分保持不变，也能在牌子上写字。不连图片时也能直接用提示词生成图片：在 8 Elite 上 896x1600 约一分钟。非商业许可（Bria）。请使用 Wi-Fi。</string>
+    <string name="models_family_fibo2">约 8.4 GB。8 Gen 3 或更新芯片，12 GB 内存。Bria 的 Fibo 2.0 Edit：连入一张图片并写下要修改的内容，4 步完成。图片其余部分保持不变，也能在牌子上写字。不连图片时也能直接用提示词生成图片：在 8 Elite 上 896x1600 约一分钟。Fibo 2.0 Dev 是基础模型，在 Edit 之外再占 4.9 GB：30 步，更慢但更贴合提示词（8 Elite 上 1024x1024 约 30 分钟）。非商业许可（Bria）。请使用 Wi-Fi。</string>
     <string name="models_family_h3image">约 15 GB（与 Krea 2 同装时 13 GB，共用其文本编码器）。需 12 GB 及以上内存、8 Gen 3 或更新。MiniMax 由 H3 视频模型做成的图片模型：6 步，无 CFG：8 Elite 上 1024x1024 约 1 分 45 秒（8 Gen 3 稍慢），擅长画面中的文字。仅文生图。许可不适用于欧盟、英国、韩国和美国。请使用 Wi-Fi。</string>
     <string name="models_family_other">每个约 3.5 GB，解包时约需 7.5 GB 可用空间。请使用 Wi-Fi。</string>
     <string name="models_import_checkpoint">导入检查点</string>

@@ -1146,13 +1146,13 @@ class SdSampler(
         // and saying it twice under two adjacent sliders is noise.
         Widget(
             "width", "int", ModelCatalog.DIT_RES.width.toString(),
-            ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
+            ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.ditMax(family).toDouble(), step = ModelCatalog.DIT_STEP,
             hintRes = R.string.hint_dit_size,
             hintArgs = listOf(ModelCatalog.DIT_STEP),
         ),
         Widget(
             "height", "int", ModelCatalog.DIT_RES.height.toString(),
-            ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.DIT_MAX.toDouble(), step = ModelCatalog.DIT_STEP,
+            ModelCatalog.DIT_MIN.toDouble(), ModelCatalog.ditMax(family).toDouble(), step = ModelCatalog.DIT_STEP,
         ),
         // ⚠⚠ **A `string` the inspector does NOT draw as a text field.** A
         // `NodeType.widgets` getter is a plain property with no Context, so it
@@ -1518,8 +1518,8 @@ class SdSampler(
         // ⚠ A DiT INPAINT snaps here, before the cut is framed and padded to this canvas: [runDit]
         // snaps its own size, but [runDitMasked] got the raw one, so a hand-edited or agent-written
         // 1000x750 reached the engine at a size the grid never offers ([ModelCatalog.ditSnap]).
-        val w = int("width").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it) else it }
-        val h = int("height").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it) else it }
+        val w = int("width").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it, ModelCatalog.ditMax(family)) else it }
+        val h = int("height").let { if (family.dit && inpaint) ModelCatalog.ditSnap(it, ModelCatalog.ditMax(family)) else it }
         // ⭐ MOSS-Image's layout prompt ([MossLayout], GitHub #77): the Layout tab's boxes with this prompt as their
         // caption, or a layout pasted into the prompt. ⚠ A layout that cannot compile stops the run with why, never
         // renders as if there were none.
@@ -2303,8 +2303,8 @@ class SdSampler(
         // the grid would turn 752 into 768, a size it was never trained at.
         val fixed = ModelCatalog.byId(p["model"].orEmpty())?.takeIf { it.fixedSizes }
         val kept = fixed?.let { ModelCatalog.keptSize(it, w0, h0) }
-        val w = kept?.width ?: ModelCatalog.ditSnap(w0)
-        val h = kept?.height ?: ModelCatalog.ditSnap(h0)
+        val w = kept?.width ?: ModelCatalog.ditSnap(w0, ModelCatalog.ditMax(family))
+        val h = kept?.height ?: ModelCatalog.ditSnap(h0, ModelCatalog.ditMax(family))
         // ⚠ Kept for Match colours: the result is matched to the FRAMED picture it was made from,
         // as the SD path does. Matching the whole photo pulled a framed dark corner of a bright
         // photo toward the photo's brightness.
