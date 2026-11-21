@@ -103,8 +103,27 @@ Nothing before the first section or after the last one. This is an example of th
         return when (target) {
             Target.PROSE -> VisionPrompts.prose(text)
             Target.TAGS -> VisionPrompts.tags(text)
-            Target.H3_TEXT, Target.H3_FIRST_FRAME, Target.H3_REFERENCE -> h3(text)
+            Target.H3_TEXT -> h3(text)
+            Target.H3_FIRST_FRAME -> h3(text)?.let { pictured(it, "S1 is the main person in the first frame, exactly as they appear there.") }
+            Target.H3_REFERENCE -> h3(text)?.let { pictured(it, "S1 is the main person of Picture 1, exactly as they appear there.") }
         }
+    }
+
+    private val VOICE = Regex("voice|speaks|sounds|tone|accent", RegexOption.IGNORE_CASE)
+
+    /**
+     * ⚠ The person is the picture's, so the prompt must not describe them: on the S25 one answer in two still gave them
+     * "long dark hair, a black blazer" (seed 1001), which fights the picture. S1's definition becomes [identity] plus only
+     * the model's sentences about the voice.
+     */
+    internal fun pictured(prompt: String, identity: String): String {
+        val head = H3_SECTIONS[0]
+        val end = prompt.indexOf(H3_SECTIONS[1]).takeIf { it > 0 } ?: return prompt
+        val body = prompt.substring(head.length, end)
+        val voice = body.split(Regex("(?<=[.!?])\\s+")).map { it.trim() }.filter { it.isNotEmpty() && VOICE.containsMatchIn(it) }
+            .joinToString(" ") { it.replace(Regex("^S1 is [^.]*?\\.\\s*"), "").replace(Regex("^(She|He|They) (has|have) "), "They have ") }
+        val s1 = listOf(identity, voice.ifEmpty { "They have a clear, natural voice." }).joinToString(" ")
+        return head + "\n" + s1 + "\n\n" + prompt.substring(end)
     }
 
     internal fun h3(raw: String): String? {

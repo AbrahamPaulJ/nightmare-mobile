@@ -73,6 +73,24 @@ N/A
         assertEquals("Rain on the pavement, distant traffic.", PromptEnhance.finish(PromptEnhance.Target.PROSE, "Rain on the pavement — distant traffic."))
     }
 
+    /** The S25's answer for a first-frame prompt (seed 1001): it gave the pictured woman a look of its own. */
+    @Test
+    fun aPicturedPersonKeepsOnlyTheirVoice() {
+        val raw = "subject_definitions:\nS1 is a woman in her thirties with long dark hair, wearing a black blazer over a white shirt. " +
+            "Her voice is calm, soft, and slightly accented.\n\nsummary:\nShe waves.\n\nretention_analysis:\nkeep\n\n" +
+            "detailed_description:\n[Shot 1] She waves.\n\noverall_soundscape:\nRoom tone.\n\nnon_diegetic_music:\nN/A"
+        val out = PromptEnhance.finish(PromptEnhance.Target.H3_FIRST_FRAME, raw)!!
+        assertTrue(out.startsWith(
+            "subject_definitions:\nS1 is the main person in the first frame, exactly as they appear there. " +
+                "Her voice is calm, soft, and slightly accented.\n\nsummary:",
+        ))
+        assertTrue("blazer" !in out)
+        // No voice sentence at all: a plain one, so the section is never empty.
+        val bare = raw.replace("Her voice is calm, soft, and slightly accented.", "")
+        assertTrue("Picture 1, exactly as they appear there. They have a clear, natural voice." in
+            PromptEnhance.finish(PromptEnhance.Target.H3_REFERENCE, bare)!!)
+    }
+
     @Test
     fun aCutOffH3AnswerIsNotOffered() {
         assertNull(PromptEnhance.finish(PromptEnhance.Target.H3_TEXT, "subject_definitions:\nS1 is a man.\n\nsummary:\nHe"))

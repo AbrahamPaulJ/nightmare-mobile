@@ -197,19 +197,19 @@ object DitEngine {
      * Still ABI 110. Its own tag and file name, so the stamp tells the two apart and a switch re-fetches.
      */
     private const val GPU_URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-zscale099-gpu/dit-engine-abi111-zscale099-gpu.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-flux103-gpu/dit-engine-abi111-flux103-gpu.zip"
 
     /**
      * ⭐ The GPU variant built `-march=armv8.2-a+fp16+dotprod` (GitHub #147): the same patches, for cores without the int8
      * matrix instructions ([CpuFeatures.hasI8mm]). The Pixel 6 Pro's Tensor G1 died of SIGILL at the first CPU matmul
-     * on the i8mm build (its 244 `smmla`); this one has none. CI 44878441362, branch `dit-099-engine`. ⚠ It moves with
+     * on the i8mm build (its 244 `smmla`); this one has none. CI 44943887240, branch `dit-103-gpu`. ⚠ It moves with
      * [GPU_URL]: a new GPU engine is built twice, the second time with that `cmake_args`.
      */
     private const val GPU_V82_URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-zscale099-gpu-v82/dit-engine-abi111-zscale099-gpu-v82.zip"
-    private const val GPU_V82_BYTES = 24_006_371L
-    private const val GPU_V82_FILE_BYTES = 59_085_480L
-    private const val GPU_V82_SHA256 = "1cf4f93e57633112452ded33ac3ba8b225cd9c57be11c09bf64baeb39dd9a0f9"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-flux103-gpu-v82/dit-engine-abi111-flux103-gpu-v82.zip"
+    private const val GPU_V82_BYTES = 24_006_123L
+    private const val GPU_V82_FILE_BYTES = 59_085_464L
+    private const val GPU_V82_SHA256 = "2b6df81a03be2f9e2af72372f6c5a133e2e72725c14df86db4ba0fddf59b3674"
 
     /** ⭐ Which of the two this phone runs: the GPU's wherever [DitGpu.wanted]. */
     private val gpu: Boolean get() = DitGpu.wanted()
@@ -256,9 +256,9 @@ object DitEngine {
     // (`dit/025`). The plain Adreno Q4_0 GEMM accumulates in half8, so every Z-Image-family model (NitroFusion 2) came out
     // a flat green frame on any GPU without the dense DP4A kernel (item 84, an 8s Gen 4; the S25 with it off).
     // CI 44389663044, branch `dit-099-engine`. Still ABI 111, the wrapper only; the NPU engine is unchanged.
-    private const val GPU_BYTES = 24_006_569L
-    private const val GPU_FILE_BYTES = 59_087_592L
-    private const val GPU_SHA256 = "4bf209296ddc116389c4af87b0d9cc4d1e664b0d650f9f673e744952871f0756"
+    private const val GPU_BYTES = 24_007_012L
+    private const val GPU_FILE_BYTES = 59_087_560L
+    private const val GPU_SHA256 = "7131a323119076af0c3f0d87b5bf1dd3bd0d2f66520ab9be92cbcf1603c96e02"
 
     /**
      * ⚠ A deviation from [com.abrah.nightmare.segment.Segmenter], which checks
