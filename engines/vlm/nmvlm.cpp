@@ -224,15 +224,17 @@ Java_com_abrah_nightmare_vlm_VlmNative_nativeDescribe(JNIEnv* env, jclass, jlong
   jmethodID onText = nullptr;
   if (sink) onText = env->GetMethodID(env->GetObjectClass(sink), "onText", "([B)Z");
 
-  std::vector<unsigned char> px(static_cast<size_t>(w) * h * 3);
-  env->GetByteArrayRegion(rgb, 0, static_cast<jsize>(px.size()), reinterpret_cast<jbyte*>(px.data()));
-  mtmd_bitmap* bmp = mtmd_bitmap_init(static_cast<uint32_t>(w), static_cast<uint32_t>(h), px.data());
+  // A text-only turn (a prompt rewrite) passes w or h <= 0: no picture, no marker, the same model and sampler.
+  const bool picture = w > 0 && h > 0;
+  std::vector<unsigned char> px(picture ? static_cast<size_t>(w) * h * 3 : 0);
+  if (picture) env->GetByteArrayRegion(rgb, 0, static_cast<jsize>(px.size()), reinterpret_cast<jbyte*>(px.data()));
+  mtmd_bitmap* bmp = picture ? mtmd_bitmap_init(static_cast<uint32_t>(w), static_cast<uint32_t>(h), px.data()) : nullptr;
 
   // The picture goes where the marker is: first in the user's turn, then the instruction.
-  std::string userText = std::string(mtmd_default_marker()) + "\n" + jstr(env, user);
+  std::string userText = picture ? std::string(mtmd_default_marker()) + "\n" + jstr(env, user) : jstr(env, user);
   std::string prompt = applyTemplate(*v, jstr(env, system), userText);
   if (prompt.empty()) {
-    mtmd_bitmap_free(bmp);
+    if (bmp) mtmd_bitmap_free(bmp);
     setError("the chat template failed");
     return nullptr;
   }
@@ -241,8 +243,8 @@ Java_com_abrah_nightmare_vlm_VlmNative_nativeDescribe(JNIEnv* env, jclass, jlong
   mtmd_input_chunks* chunks = mtmd_input_chunks_init();
   mtmd_input_text text{prompt.c_str(), prompt.size(), true, true};
   const mtmd_bitmap* bmps[] = {bmp};
-  int32_t rc = mtmd_tokenize(v->mtmd, chunks, &text, bmps, 1);
-  mtmd_bitmap_free(bmp);
+  int32_t rc = mtmd_tokenize(v->mtmd, chunks, &text, bmps, picture ? 1 : 0);
+  if (bmp) mtmd_bitmap_free(bmp);
   if (rc != 0) {
     mtmd_input_chunks_free(chunks);
     setError("tokenize failed (" + std::to_string(rc) + ")");
