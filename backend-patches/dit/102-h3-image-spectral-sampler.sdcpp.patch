@@ -1,0 +1,163 @@
+diff --git a/src/runtime/denoiser.hpp b/src/runtime/denoiser.hpp
+index d651d31..3dbb4da 100644
+--- a/src/runtime/denoiser.hpp
++++ b/src/runtime/denoiser.hpp
+@@ -5,6 +5,7 @@
+ #include <array>
+ #include <cctype>
+ #include <cmath>
++#include <cstdlib>
+ #include <cstring>
+ #include <functional>
+ #include <limits>
+@@ -2972,6 +2973,136 @@ static sd::Tensor<float> sample_gradient_estimation(denoise_cb_t model,
+ }
+ 
+ // k diffusion reverse ODE: dx = (x - D(x;\sigma)) / \sigma dt; \sigma(t) = t
++// nightmare (dit/102): frequency-split re-noising for MiniMax-H3-Image's distilled six-interval grid. Our own code from
++// the idea described in igorls/comfyui-h3-sampler's README (GPL-3.0; none of its code used). Plan "EEFFFE": the first
++// two and the last interval are plain Euler; on the middle ones the model's implied noise is kept below a radial
++// frequency cutoff (pose, face, hands, text) and above it blended with fresh noise, per frequency
++// sqrt(1 - e(f)^2) * old + e(f) * new, which keeps a white noise white. Each call keeps its own [sigma, sigma_next].
++// NM_H3_SPECTRAL = "eta,cutoff,width,hf_scale" (defaults 0.85, 0.25, 0.25, 1; "1" = defaults). Unset: plain Euler.
++struct NmSpectralArgs {
++    float eta = 0.85f, cutoff = 0.25f, width = 0.25f, hf = 1.f;
++};
++
++static void nm_dft_1d(std::vector<float>& re, std::vector<float>& im, int64_t n, int64_t stride, int64_t offset,
++                      bool inverse, const std::vector<float>& cs, const std::vector<float>& sn, std::vector<float>& tr,
++                      std::vector<float>& ti) {
++    for (int64_t k = 0; k < n; ++k) {
++        float sr = 0.f, si = 0.f;
++        for (int64_t j = 0; j < n; ++j) {
++            const int64_t t = (k * j) % n;
++            const float c = cs[t], s = inverse ? sn[t] : -sn[t];
++            const float ar = re[offset + j * stride], ai = im[offset + j * stride];
++            sr += ar * c - ai * s;
++            si += ar * s + ai * c;
++        }
++        tr[k] = sr;
++        ti[k] = si;
++    }
++    const float scale = inverse ? 1.f / static_cast<float>(n) : 1.f;
++    for (int64_t k = 0; k < n; ++k) {
++        re[offset + k * stride] = tr[k] * scale;
++        im[offset + k * stride] = ti[k] * scale;
++    }
++}
++
++static void nm_dft_2d(std::vector<float>& re, std::vector<float>& im, int64_t w, int64_t h, bool inverse) {
++    auto table = [](int64_t n, std::vector<float>& cs, std::vector<float>& sn) {
++        cs.resize(n);
++        sn.resize(n);
++        for (int64_t t = 0; t < n; ++t) {
++            const double a = 2.0 * 3.14159265358979323846 * static_cast<double>(t) / static_cast<double>(n);
++            cs[t] = static_cast<float>(std::cos(a));
++            sn[t] = static_cast<float>(std::sin(a));
++        }
++    };
++    std::vector<float> cw, sw, ch, sh, tr(std::max(w, h)), ti(std::max(w, h));
++    table(w, cw, sw);
++    table(h, ch, sh);
++    for (int64_t y = 0; y < h; ++y) nm_dft_1d(re, im, w, 1, y * w, inverse, cw, sw, tr, ti);
++    for (int64_t x = 0; x < w; ++x) nm_dft_1d(re, im, h, w, x, inverse, ch, sh, tr, ti);
++}
++
++// old and fresh: [w, h, planes...]; returns the blend in old's shape.
++static sd::Tensor<float> nm_spectral_mix(const sd::Tensor<float>& old_noise, const sd::Tensor<float>& fresh,
++                                         const NmSpectralArgs& a) {
++    const auto& shape = old_noise.shape();
++    const int64_t w = shape[0], h = shape.size() > 1 ? shape[1] : 1;
++    const int64_t plane = w * h, planes = old_noise.numel() / plane;
++    std::vector<float> e(plane), keep(plane);
++    for (int64_t y = 0; y < h; ++y) {
++        for (int64_t x = 0; x < w; ++x) {
++            const float fx = static_cast<float>(x <= w / 2 ? x : x - w) / static_cast<float>(w);
++            const float fy = static_cast<float>(y <= h / 2 ? y : y - h) / static_cast<float>(h);
++            const float fr = std::sqrt(fx * fx + fy * fy) / 0.5f;  // 1 = Nyquist along an axis
++            const float u  = std::clamp((fr - a.cutoff) / std::max(a.width, 1e-6f), 0.f, 1.f);
++            const float et = a.eta * 0.5f * (1.f - std::cos(3.14159265f * u));
++            e[y * w + x]    = et * a.hf;
++            keep[y * w + x] = std::sqrt(std::max(0.f, 1.f - et * et));
++        }
++    }
++    sd::Tensor<float> out = old_noise;
++    std::vector<float> ore(plane), oim(plane), nre(plane), nim(plane);
++    for (int64_t p = 0; p < planes; ++p) {
++        const float* po = old_noise.data() + p * plane;
++        const float* pn = fresh.data() + p * plane;
++        for (int64_t i = 0; i < plane; ++i) {
++            ore[i] = po[i];
++            nre[i] = pn[i];
++            oim[i] = nim[i] = 0.f;
++        }
++        nm_dft_2d(ore, oim, w, h, false);
++        nm_dft_2d(nre, nim, w, h, false);
++        for (int64_t i = 0; i < plane; ++i) {
++            ore[i] = keep[i] * ore[i] + e[i] * nre[i];
++            oim[i] = keep[i] * oim[i] + e[i] * nim[i];
++        }
++        nm_dft_2d(ore, oim, w, h, true);
++        float* dst = out.data() + p * plane;
++        for (int64_t i = 0; i < plane; ++i) dst[i] = ore[i];
++    }
++    return out;
++}
++
++static sd::Tensor<float> sample_h3_spectral(denoise_cb_t model, sd::Tensor<float> x, const std::vector<float>& sigmas,
++                                            std::shared_ptr<RNG> rng, const NmSpectralArgs& a) {
++    const int steps = static_cast<int>(sigmas.size()) - 1;
++    LOG_INFO("H3 spectral sampler: %d steps, eta %.2f cutoff %.2f width %.2f hf %.2f, latent %lldx%lld",
++             steps, a.eta, a.cutoff, a.width, a.hf, (long long)x.shape()[0], (long long)(x.shape().size() > 1 ? x.shape()[1] : 1));
++    for (int i = 0; i < steps; i++) {
++        const float sigma = sigmas[i], next = sigmas[i + 1];
++        auto denoised_opt = model(x, sigma, i + 1);
++        if (denoised_opt.pred.empty()) {
++            return {};
++        }
++        sd::Tensor<float> x0 = std::move(denoised_opt.pred);
++        // flow: x = (1 - s) x0 + s eps, so Euler's next point is (1 - s') x0 + s' eps with the implied eps.
++        sd::Tensor<float> eps = x0 + (x - x0) / sigma;
++        const bool spectral   = i >= 2 && i <= steps - 2 && next > 0.f;
++        if (spectral) {
++            eps = nm_spectral_mix(eps, sd::Tensor<float>::randn_like(x, rng), a);
++        }
++        x = x0 * (1.f - next) + eps * next;
++    }
++    return x;
++}
++
++static bool nm_h3_spectral_args(NmSpectralArgs& a) {
++    const char* v = std::getenv("NM_H3_SPECTRAL");
++    if (v == nullptr || v[0] == 0 || strcmp(v, "0") == 0) return false;
++    float f[4] = {a.eta, a.cutoff, a.width, a.hf};
++    int n = 0;
++    for (const char* p = v; *p && n < 4;) {
++        char* end = nullptr;
++        const float val = std::strtof(p, &end);
++        if (end == p) break;
++        if (!(n == 0 && strcmp(v, "1") == 0)) f[n] = val;
++        ++n;
++        p = (*end == ',') ? end + 1 : end;
++    }
++    a.eta = f[0]; a.cutoff = f[1]; a.width = f[2]; a.hf = f[3];
++    return true;
++}
++
+ static sd::Tensor<float> sample_k_diffusion(sample_method_t method,
+                                             denoise_cb_t model,
+                                             sd::Tensor<float> x,
+@@ -2986,6 +3117,13 @@ static sd::Tensor<float> sample_k_diffusion(sample_method_t method,
+             return sample_sefi_euler(sefi.get(), model, std::move(x));
+         }
+     }
++    if (method == EULER_SAMPLE_METHOD && denoiser_for_dispatch &&
++        std::dynamic_pointer_cast<MiniMaxH3ImageDenoiser>(denoiser_for_dispatch)) {
++        NmSpectralArgs spectral;
++        if (nm_h3_spectral_args(spectral)) {
++            return sample_h3_spectral(model, std::move(x), sigmas, rng, spectral);
++        }
++    }
+     SamplerExtraArgs extra_args = parse_key_value_args(extra_sample_args, "extra sample arg");
+     switch (method) {
+         case EULER_A_SAMPLE_METHOD:
