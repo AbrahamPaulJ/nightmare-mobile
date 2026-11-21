@@ -145,7 +145,7 @@
     <string name="mask_pick_hint">选择要重绘的内容。再点一次标签即可取消。此工作流会记住你的选择，并应用到每张新照片。</string>
     <string name="mask_pick_show">启用自动遮罩</string>
     <string name="mask_pick_working">正在读取图片…</string>
-    <string name="mask_auto_working">正在用 RMBG 3.0 查找主体，大约一分钟</string>
+    <string name="mask_auto_working">正在用 RMBG 3.0 查找主体，大约 2 分钟</string>
     <string name="mask_auto_download">请在“模型”中下载 %1$s 以遮罩主体</string>
     <string name="mb_of_total">%1$d / %2$d MB</string>
     <string name="parser_loading">正在读取图片，第一次选择需要稍等…</string>

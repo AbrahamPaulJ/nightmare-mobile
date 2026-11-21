@@ -2422,14 +2422,17 @@ class SdSampler(
         }
         // ⚠ The same release as [runDitMasked]: a DiT checkpoint needs the RAM more than a warm model.
         PictureModels.releaseAll()
+        // ⚠ A matte within a megapixel whatever the canvas ([Matte.renderSize]): above it RMBG 3.0 breaks. The engine
+        // resizes the picture to it, and [matteCut] scales the matte back to the photo.
+        val (rw, rh) = if (matte) Matte.renderSize(w, h, ModelCatalog.ditMax(family)) else w to h
         val r = ctx.host.generate(
             prompt = if (matte) Matte.INSTRUCTION else prompt.positive,
             negative = if (matte) "" else prompt.negative,
             steps = p["steps"]?.toIntOrNull() ?: 4,
             cfg = p["cfg"]?.toDoubleOrNull() ?: 1.0,
             seed = p["seed"]?.toIntOrNull() ?: 0,
-            width = w,
-            height = h,
+            width = rw,
+            height = rh,
             imagePng = png,
             denoise = p["denoise"]?.toDoubleOrNull() ?: defaultDenoise(family).toDouble(),
             referencePngs = listOfNotNull(referencePng) + extraRefs.map { r ->

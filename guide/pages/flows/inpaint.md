@@ -76,7 +76,7 @@ paste onto something else.
 
 On an 8 Gen 3 or newer with 12 GB of RAM, the mask editor has a **sparkle** button. Tap it and
 **RMBG 3.0** finds the photo's subject, people, animals or things, and masks all of it, with hair
-and other soft edges kept soft. It takes about a minute the first time on each photo (it is an 8B
+and other soft edges kept soft. It takes about 2 minutes the first time on each photo (it is an 8B
 model; download **RMBG 3.0** in **Models** first, 4.9 GB beside Fibo 2.0 Edit Turbo). Tap it again to
 take the mask away, or **Invert** to repaint the background instead of the subject. **Save
 cut-out** saves the subject with its background removed. To do only that, use the

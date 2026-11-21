@@ -4,7 +4,7 @@ A photo in, the same photo out with its background made **transparent**, saved a
 and other soft edges stay soft rather than cut out with scissors.
 
 It runs **RMBG 3.0**, Bria's background remover built on Fibo 2.0 Edit Turbo. It needs an
-**8 Gen 3 or newer with 12 GB of RAM**; on an 8 Elite it takes about a minute.
+**8 Gen 3 or newer with 12 GB of RAM**; on an 8 Elite it takes about 2 minutes.
 
 ## Use it
 

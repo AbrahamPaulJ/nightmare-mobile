@@ -1518,6 +1518,9 @@ internal fun explainOpFailure(code: Int, body: String): String {
     if (BackendProcess.isRunning && !BackendProcess.awaitExit(1_500)) return body
     // ⭐ An assert is not memory: no "close other apps" after it.
     BackendProcess.assertReason()?.let { return "the backend stopped: $it [$body]" }
+    // ⭐ Nor is SIGILL, and it leads over the log's last `[ ERROR ]` line: on an S21 FE that was a harmless
+    // "Hexagon arch v68 is under supported range" warning, and the report blamed it (Saved #8372, 2026-11-22).
+    BackendProcess.lastExit?.takeIf { it.code == 132 && !it.byApp }?.let { return "the backend stopped: ${BackendProcess.describeExit(it.code)} [$body]" }
     // ⚠ No `[ ERROR ]` line is the lmkd signature — then the exit signal is the
     // only evidence there is, and it is named rather than dropped.
     val why = BackendProcess.failureReason() ?: BackendProcess.exitMeaning()

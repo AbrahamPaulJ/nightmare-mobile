@@ -148,7 +148,7 @@
     <string name="mask_pick_hint">Выберите, что перерисовать. Коснитесь метки ещё раз, чтобы снять её. Поток запомнит выбор и применит его к каждому новому снимку.</string>
     <string name="mask_pick_show">Включить автомаску</string>
     <string name="mask_pick_working">Читаем картинку…</string>
-    <string name="mask_auto_working">Ищу объект с помощью RMBG 3.0. Около минуты</string>
+    <string name="mask_auto_working">Ищу объект с помощью RMBG 3.0. Около 2 минут</string>
     <string name="mask_auto_download">Скачайте %1$s в «Моделях», чтобы выделить объект</string>
     <string name="mb_of_total">%1$d из %2$d МБ</string>
     <string name="parser_loading">Читаем картинку: первый выбор займёт мгновение…</string>

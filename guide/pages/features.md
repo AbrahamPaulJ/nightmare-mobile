@@ -82,7 +82,7 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
   same window paints colours and rough shapes for the repaint to follow. A photo with transparent parts keeps them
   wherever nothing was repainted.
 - **Tap to select**: tap an object and the mask follows its outline (Segment Anything 2.1). **Save cut-out** saves the selection as a picture with a transparent background.
-- **Remove background** (RMBG 3.0, Bria's 8B background remover): a flow that gives a photo a transparent background with hair and soft edges kept, and a button in the mask editor that masks the whole subject. About a minute on an 8 Elite; 8 Gen 3 and newer with 12 GB.
+- **Remove background** (RMBG 3.0, Bria's 8B background remover): a flow that gives a photo a transparent background with hair and soft edges kept, and a button in the mask editor that masks the whole subject. About 2 minutes on an 8 Elite; 8 Gen 3 and newer with 12 GB.
 - **Auto mask by name**: Clothes, Face, Hair, Shoes or Bag, found in every new photo.
 - **Add Objects**: paste an object from another photo; only its edges are repainted.
 - **Image editing**: FLUX.2 Klein or Qwen Image re-render a photo to follow a prompt, with up to three reference pictures (images 2 to 4), added from a References row or wired in.

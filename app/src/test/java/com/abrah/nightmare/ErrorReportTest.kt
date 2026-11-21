@@ -123,6 +123,7 @@ class ErrorReportTest {
         assertTrue(BackendProcess.describeExit(137)!!.contains("memory"))
         assertTrue(BackendProcess.describeExit(134)!!.contains("SIGABRT"))
         assertTrue(BackendProcess.describeExit(139)!!.contains("SIGSEGV"))
+        assertTrue(BackendProcess.describeExit(132)!!.contains("CPU instruction"))
         assertEquals("killed by signal 1", BackendProcess.describeExit(129))
         assertNull(BackendProcess.describeExit(0))
     }

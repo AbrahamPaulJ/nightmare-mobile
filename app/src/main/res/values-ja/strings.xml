@@ -169,7 +169,7 @@
 <string name="cd_pick_by_name">自動セグメント</string>
 <string name="cd_auto_subject">被写体をマスク (RMBG 3.0)</string>
 <string name="mask_pick_working">画像を読み取り中…</string>
-<string name="mask_auto_working">RMBG 3.0 で被写体を探しています。1 分ほどかかります</string>
+<string name="mask_auto_working">RMBG 3.0 で被写体を探しています。2 分ほどかかります</string>
 <string name="mask_auto_download">被写体をマスクするには、モデルで %1$s をダウンロードしてください</string>
 <string name="mask_pick_hint">描き直すものを選んでください。チップをもう一度タップすると解除されます。このフローは選択を記憶し、新しい写真すべてに適用します。</string>
 <string name="mask_pick_show">自動マスクを有効化</string>

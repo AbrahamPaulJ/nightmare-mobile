@@ -6127,11 +6127,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             ?: return done(text(R.string.mask_no_picture_to_pick))
         if (com.abrah.nightmare.segment.SubjectMatte.cached(ctx, photo) != null) return done(null)
         if (!spec.installed(ctx)) return done(text(R.string.mask_auto_download, spec.label))
-        // ⭐ The photo's shape at about a megapixel on the engine's grid, the size Bria measured it at.
-        val scale = kotlin.math.sqrt(1024.0 * 1024.0 / (photo.width.toDouble() * photo.height))
-        val max = ModelCatalog.ditMax(spec.family)
-        val w = ModelCatalog.ditSnap((photo.width * scale).toInt(), max)
-        val h = ModelCatalog.ditSnap((photo.height * scale).toInt(), max)
+        // ⭐ The photo's shape within a megapixel, as the Remove background flow renders it ([Matte.renderSize]).
+        val (w, h) = Matte.renderSize(photo.width, photo.height, ModelCatalog.ditMax(spec.family))
         // ⭐ The edit sampler's own key, so the launch gets the budget a Remove background run would.
         val key = com.abrah.nightmare.SdSampler.FIBO2.contextKey(
             Node("auto", com.abrah.nightmare.SdSampler.FIBO2.name,

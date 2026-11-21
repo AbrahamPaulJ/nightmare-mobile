@@ -68,4 +68,17 @@ class MatteTest {
         assertEquals(ModelCatalog.RMBG3, s.params["model"])
         assertEquals("image", s.inputs["image"]?.node)
     }
+
+    /** ⭐ RMBG 3.0 broke at 960x1280 on the S25 (2026-11-22): every render stays within a megapixel, in the photo's shape. */
+    @Test
+    fun theMatteRendersWithinAMegapixelInThePhotosShape() {
+        assertEquals(768 to 1024, Matte.renderSize(960, 1280))
+        assertEquals(768 to 1024, Matte.renderSize(3000, 4000))
+        assertEquals(1024 to 1024, Matte.renderSize(2048, 2048))
+        for ((w, h) in listOf(960 to 1280, 1920 to 1080, 1080 to 1920, 4000 to 3000, 1000 to 1500, 512 to 2048)) {
+            val (rw, rh) = Matte.renderSize(w, h)
+            assertTrue("$w x $h -> $rw x $rh", rw.toLong() * rh <= 1024L * 1024L)
+            assertTrue("$w x $h -> $rw x $rh", kotlin.math.abs(rw.toDouble() / rh - w.toDouble() / h) < 0.05)
+        }
+    }
 }

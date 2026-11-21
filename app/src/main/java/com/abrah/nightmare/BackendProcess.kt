@@ -268,6 +268,8 @@ object BackendProcess {
         137 -> "killed by the system (SIGKILL). On a phone that is almost always Android freeing memory"
         134 -> "the engine aborted (SIGABRT). Usually an assert on something in the model it could not handle"
         139 -> "the engine crashed (SIGSEGV)"
+        // ⚠ Not memory: a CPU instruction the cores lack (the i8mm engine on a Snapdragon 888 or a Tensor G1, #147).
+        132 -> "the engine used a CPU instruction this phone's cores do not have (SIGILL). Please report it with this log"
         135 -> "the engine crashed (SIGBUS)"
         143 -> "terminated (SIGTERM)"
         in 129..159 -> "killed by signal ${code - 128}"
