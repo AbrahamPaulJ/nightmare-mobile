@@ -15,7 +15,7 @@ on:
         default: "v1.0.0"
       llama_sha:
         description: "the commit that tag must be (blank skips the check)"
-        default: "a6d1a74dbebce3a16f4f2ceddbf38c21a08d8674"
+        default: "b1b770d90d94cad9e9ea5b993bdbc383a522fb28"
 
 jobs:
   build:
