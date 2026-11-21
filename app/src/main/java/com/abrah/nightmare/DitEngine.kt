@@ -199,10 +199,25 @@ object DitEngine {
     private const val GPU_URL =
         "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-zscale099-gpu/dit-engine-abi111-zscale099-gpu.zip"
 
+    /**
+     * ⭐ The GPU variant built `-march=armv8.2-a+fp16+dotprod` (GitHub #147): the same patches, for cores without the int8
+     * matrix instructions ([CpuFeatures.hasI8mm]). The Pixel 6 Pro's Tensor G1 died of SIGILL at the first CPU matmul
+     * on the i8mm build (its 244 `smmla`); this one has none. CI 44878441362, branch `dit-099-engine`. ⚠ It moves with
+     * [GPU_URL]: a new GPU engine is built twice, the second time with that `cmake_args`.
+     */
+    private const val GPU_V82_URL =
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-zscale099-gpu-v82/dit-engine-abi111-zscale099-gpu-v82.zip"
+    private const val GPU_V82_BYTES = 24_006_371L
+    private const val GPU_V82_FILE_BYTES = 59_085_480L
+    private const val GPU_V82_SHA256 = "1cf4f93e57633112452ded33ac3ba8b225cd9c57be11c09bf64baeb39dd9a0f9"
+
     /** ⭐ Which of the two this phone runs: the GPU's wherever [DitGpu.wanted]. */
     private val gpu: Boolean get() = DitGpu.wanted()
 
-    val URL: String get() = if (gpu) GPU_URL else NPU_URL
+    /** ⭐ …and of the GPU's two, the ARMv8.2 build on cores without i8mm. Every phone with an NPU engine has them. */
+    private val v82: Boolean get() = gpu && !CpuFeatures.hasI8mm
+
+    val URL: String get() = if (v82) GPU_V82_URL else if (gpu) GPU_URL else NPU_URL
 
     /**
      * ⭐ The same archive, byte for byte, on Hugging Face, where every model already comes from.
@@ -223,11 +238,11 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    val BYTES: Long get() = if (gpu) GPU_BYTES else 23_330_459L
+    val BYTES: Long get() = if (v82) GPU_V82_BYTES else if (gpu) GPU_BYTES else 23_330_459L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
-    val FILE_BYTES: Long get() = if (gpu) GPU_FILE_BYTES else NPU_FILE_BYTES
+    val FILE_BYTES: Long get() = if (v82) GPU_V82_FILE_BYTES else if (gpu) GPU_FILE_BYTES else NPU_FILE_BYTES
     private const val NPU_FILE_BYTES = 56_260_232L
 
     /**
@@ -253,7 +268,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private val SHA256: String get() = if (gpu) GPU_SHA256 else "172ccdc98c675584e667c82451cc53de102efaed32ce0163709825cd58b91a79"
+    private val SHA256: String get() = if (v82) GPU_V82_SHA256 else if (gpu) GPU_SHA256 else "172ccdc98c675584e667c82451cc53de102efaed32ce0163709825cd58b91a79"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 
