@@ -221,6 +221,17 @@ class BackendFailureReasonTest {
         assertNull(BackendProcess.failureReason())
     }
 
+    /** ⭐ The user's S21 FE (v68, GPU route, 2026-11-22): the arch notes are no reason; the exit signal is. */
+    @Test
+    fun v68HexagonNotesAreNeverTheReason() {
+        feed(listOf(
+            "   837.2ms [ ERROR ] [dit] util.cpp:631  - ggml-hex: Hexagon arch v68 is under supported range, capping at v69",
+            "   837.2ms [ ERROR ] [dit] util.cpp:631  - ggml-hex: forcing ndev to 1 for SoCs archs lower than v75.",
+            "   837.2ms [  INFO ] [dit] util.cpp:625  - ggml-hex: FASTRPC_GET_DOMAINS query failed (0x6c), using static CDSP domains",
+        ))
+        assertNull(BackendProcess.failureReason())
+    }
+
     @Test
     fun aMulMatAssertWithoutALoraBlamesTheFile() {
         feed(kreaLoraAbort.filterNot { "lora" in it })

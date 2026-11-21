@@ -165,6 +165,10 @@ object BackendProcess {
         // launch there; a tester's text-encoder assert was reported as "forcing ndev to 1" (2026-10-17).
         "forcing ndev to 1",
         "failed to get URI",
+        // ⚠ The GPU engine keeps the Hexagon backend for NPU models, and on a v68 chip (Snapdragon 888) it notes the arch
+        // as an ERROR at every launch, GPU route or not. The S21 FE's GPU crash was reported as this line (2026-11-22).
+        "is under supported range",
+        "FASTRPC_GET_DOMAINS query failed",
     )
 
     /**
