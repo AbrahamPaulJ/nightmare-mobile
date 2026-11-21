@@ -22,6 +22,11 @@ import androidx.compose.runtime.setValue
  *
  * ⚠ Keyed by `versionCode`, so an app update that fixes the runtime gets to ask
  * again. A phone's chip does not change; the code judging it does.
+ *
+ * ⚠⚠ **A chip KNOWN to be below v79 is a NO without the canary** ([belowFloor]), the rule every flow already
+ * follows ([com.abrah.nightmare.canvas.Recipe.runsOnDevice]): the arch is a floor, an unknown chip still asks the
+ * canary. GitHub #122: a POCO F7 (SM8735, v73 in the table) was offered Neodragon, installed 8 GB and failed at
+ * `load cliplp_v79.bin`; its canary could not tell, and "could not tell" shows video.
  */
 object VideoGate {
 
@@ -39,11 +44,19 @@ object VideoGate {
         private set
 
     /** ⚠ True only on a definite NO. Every hide asks this, never `supported == false` by hand. */
-    val hidden: Boolean get() = supported == false
+    val hidden: Boolean get() = supported == false || floorNo
+
+    /** Set by [load] from [com.abrah.nightmare.DeviceProbe.caps], once: a getter Compose reads must not read /proc. */
+    private var floorNo = false
+
+    /** ⭐ Pure, for the test: a chip known to be below the video contexts' arch ([ModelCatalog.DIT_MIN_ARCH]). */
+    fun belowFloor(caps: com.abrah.nightmare.DeviceProbe.Caps): Boolean =
+        caps.known && !caps.supportsArch(com.abrah.nightmare.ModelCatalog.DIT_MIN_ARCH)
 
     private fun key(versionCode: Int) = "video_gate_$versionCode"
 
     fun load(context: Context, versionCode: Int) {
+        floorNo = runCatching { belowFloor(com.abrah.nightmare.DeviceProbe.caps()) }.getOrDefault(false)
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         supported = when (prefs.getString(key(versionCode), null)) {
             "yes" -> true
@@ -65,6 +78,8 @@ object VideoGate {
     @Synchronized
     fun probeIfNeeded(context: Context, versionCode: Int, runner: () -> NpuCanary.Result?) {
         if (supported != null) return
+        // ⭐ No canary on a chip known to be below the floor: QNN would load into this process for a known answer.
+        if (floorNo) { supported = false; return }
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         prefs.edit().putString(key(versionCode), PROBING).commit()
         val ok = runner()?.canDownload ?: true
