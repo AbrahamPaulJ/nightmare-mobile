@@ -1,0 +1,17 @@
+diff --git a/src/pipeline/diffusion_engine.cpp b/src/pipeline/diffusion_engine.cpp
+index 5fd9d7d..4da0fc9 100644
+--- a/src/pipeline/diffusion_engine.cpp
++++ b/src/pipeline/diffusion_engine.cpp
+@@ -2724,6 +2724,12 @@ int StableDiffusionGGML::get_image_channels() const {
+ 
+ int StableDiffusionGGML::get_image_seq_len(int h, int w) {
+     int vae_scale_factor = get_vae_scale_factor();
++    // nightmare (dit/103): FLUX.1's schedule counts the tokens its DiT sees, 2x2 latent patches (BFL's sampling.py,
++    // diffusers' packed latents): 4096 at 1024x1024. The latent-pixel count (16384) put mu at 3.23 instead of 1.15, a
++    // 25x shift where 3.2x is meant, and drew a fine brick texture in fur and skin at 1024 (faint at 512).
++    if (sd_version_is_flux(version) && version != VERSION_CHROMA_RADIANCE) {
++        vae_scale_factor *= 2;
++    }
+     return (h / vae_scale_factor) * (w / vae_scale_factor);
+ }
+ 
