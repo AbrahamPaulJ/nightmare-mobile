@@ -883,7 +883,12 @@ object CustomModels {
             val int8 = Int8Gguf.converts(head)
             // ⭐ And an mxfp8 one ([MxFp8Gguf]): its per-block scales are something the engine cannot read at all.
             val mx = MxFp8Gguf.converts(head)
-            val toQ8 = !int8 && !mx && variant == DitVariant.MOSS && !head.gguf && MossGguf.converts(head.json)
+            // ⭐ GitHub #146: and a 16-bit Anima, by the rule the catalogue's own Anima downloads use ([AnimaGguf]).
+            val toQ8 = !int8 && !mx && !head.gguf && when (variant) {
+                DitVariant.MOSS -> MossGguf.converts(head.json)
+                DitVariant.ANIMA -> AnimaGguf.converts(head.json)
+                else -> false
+            }
             // ⭐ And a plain fp8 Krea 2 below v79 ([Fp8Q8Gguf]): its first block outgrew the NPU budget on an 8 Gen 3.
             val fp8q8 = !int8 && !mx && !toQ8 && Fp8Q8Gguf.converts(head, variant.family, DeviceProbe.caps())
             // ⭐ A `.gguf` keeps its format: the engine picks the loader by name.
@@ -906,7 +911,7 @@ object CustomModels {
                 Log.i(TAG, "converted int8 '$name' to a Q8_0 GGUF: $bytes bytes")
             } else if (toQ8) {
                 val bytes = SafetensorsGguf.convertStream(
-                    open, part, MossGguf.rule,
+                    open, part, if (variant == DitVariant.ANIMA) AnimaGguf.rule else MossGguf.rule,
                     { done, total -> onProgress(ModelInstaller.Progress("converting to Q8_0", done, total)) }, isCancelled,
                 )
                 Log.i(TAG, "converted '$name' to a Q8_0 GGUF: $bytes bytes")

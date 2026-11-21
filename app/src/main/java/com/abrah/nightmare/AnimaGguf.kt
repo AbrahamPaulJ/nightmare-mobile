@@ -42,6 +42,23 @@ object AnimaGguf {
                 outShape.last() % 32 != 0L) SafetensorsGguf.F32 else SafetensorsGguf.Q8_0
     }
 
+    /**
+     * ⭐ GitHub #146: whether an imported Anima `.safetensors` ([CustomModels.DitHead.json]) converts to Q8_0 as it is
+     * read, as a 16-bit MOSS import does ([MossGguf.converts]): the built-ins' own format, about half the size, and the
+     * reporter's int8 imports (which became Q8_0) ran ~50 % faster on an 8 Gen 3 than bf16. Every block weight must be
+     * 16- or 32-bit (fp8 and int8 have their own paths), and the file must be one [rule] takes (an `llm_adapter`).
+     */
+    fun converts(headerJson: String): Boolean = runCatching {
+        val h = org.json.JSONObject(headerJson)
+        val names = h.keys().asSequence().filter { it != "__metadata__" }.toList()
+        val weights = names.filter { it.contains("blocks.") && it.endsWith(".weight") }.map { h.getJSONObject(it) }
+        names.any { n -> rule.prefixes.fold(n) { s, p -> s.removePrefix(p) }.startsWith("llm_adapter.") } &&
+            weights.isNotEmpty() && weights.all { it.getString("dtype") in SIXTEEN_OR_32 } &&
+            weights.any { it.getJSONArray("shape").length() == 2 }
+    }.getOrDefault(false)
+
+    private val SIXTEEN_OR_32 = setOf("F16", "BF16", "F32")
+
     val converter = Converter { src, dst, onProgress, isCancelled -> convert(src, dst, onProgress, isCancelled) }
 
     fun convert(src: File, dst: File, onProgress: (Long, Long) -> Unit, isCancelled: () -> Boolean) =

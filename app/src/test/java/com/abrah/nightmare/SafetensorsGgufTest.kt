@@ -246,6 +246,49 @@ class SafetensorsGgufTest {
         assertEquals(false, MossGguf.converts(head("I8")))
     }
 
+    /**
+     * ⭐ GitHub #146: a 16-bit Anima import converts to Q8_0 as MOSS's does; fp8, int8, a mixed file, or a file
+     * [AnimaGguf.rule] would refuse (no `llm_adapter`) stays as it was.
+     */
+    @Test
+    fun onlySixteenBitAnimaConverts() {
+        fun t(dtype: String, vararg shape: Int) =
+            JSONObject().put("dtype", dtype).put("shape", JSONArray(shape.toList())).put("data_offsets", JSONArray(listOf(0, 1)))
+        fun head(block: String, adapter: Boolean = true) = JSONObject()
+            .put("net.blocks.0.self_attn.q_proj.weight", t(block, 64, 64))
+            .put("net.blocks.0.layer_norm.weight", t(block, 64))
+            .apply { if (adapter) put("net.llm_adapter.blocks.0.mlp.0.weight", t("BF16", 64, 64)) }
+            .toString()
+        assertTrue(AnimaGguf.converts(head("BF16")))
+        assertTrue(AnimaGguf.converts(head("F16")))
+        assertEquals(false, AnimaGguf.converts(head("F8_E4M3")))
+        assertEquals(false, AnimaGguf.converts(head("I8")))
+        assertEquals(false, AnimaGguf.converts(head("BF16", adapter = false)))
+        val mixed = JSONObject(head("BF16")).put("net.blocks.1.self_attn.q_proj.weight", t("F8_E4M3", 64, 64)).toString()
+        assertEquals(false, AnimaGguf.converts(mixed))
+    }
+
+    /**
+     * ⭐ #146's path: the streaming writer with Anima's rule writes the catalogue converter's file, in the source's
+     * tensor order (⚠ by design, [aMossStreamConvertsLikeTheFile]): same size, whole, Q8_0 blocks, prefix dropped.
+     */
+    @Test
+    fun animaStreamsLikeTheCatalogueConverter() {
+        val src = safetensors(listOf(
+            t("model.diffusion_model.llm_adapter.w", 32, 64), t("model.diffusion_model.blocks.0.attn.w", 64, 64),
+            t("model.diffusion_model.x_embedder.b", 32),
+        ))
+        val viaFile = File(tmp.root, "file.gguf").also { AnimaGguf.convert(src, it, { _, _ -> }, { false }) }
+        val viaStream = File(tmp.root, "stream.gguf")
+        val written = SafetensorsGguf.convertStream({ src.inputStream() }, viaStream, AnimaGguf.rule, { _, _ -> }, { false })
+        assertEquals(viaFile.length(), viaStream.length())
+        assertEquals(viaStream.length(), written)
+        assertTrue(GgufHeader.isComplete(viaStream))
+        assertEquals(setOf("Q8_0", "F32"), GgufHeader.parse(viaStream.readBytes()).types)
+        val (plan, _) = SafetensorsGguf.plan(src, AnimaGguf.rule)
+        assertEquals(SafetensorsGguf.Q8_0, plan.single { it.name == "blocks.0.attn.w" }.type)
+    }
+
     /** ⚠ The real fp8-scaled layout (Realism By Stable Yogi Moss v1.5): half BF16, half fp8. It stays a safetensors. */
     @Test
     fun aMixedFp8ScaledMossDoesNotConvert() {
