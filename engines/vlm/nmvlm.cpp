@@ -115,9 +115,15 @@ extern "C" {
 // The skel dir first, then the vendor dirs so the platform's own stubs still resolve (nmqnn.cpp's rule).
 // ⚠ Must run BEFORE the first backend call: fastrpc reads the variable when it is first loaded.
 JNIEXPORT jboolean JNICALL
-Java_com_abrah_nightmare_vlm_VlmNative_nativeInit(JNIEnv* env, jclass, jstring skelDir) {
+Java_com_abrah_nightmare_vlm_VlmNative_nativeInit(JNIEnv* env, jclass, jstring skelDir, jstring devices) {
   std::lock_guard<std::mutex> lock(g_mu);
   std::string dir = jstr(env, skelDir);
+  // ⭐ The NPU sessions ggml-hexagon opens: "HTP0:0,HTP0:1" splits the layers over two sessions on one NPU (each has
+  // its own ~3.5 GB address window, so a 4 GB model needs no remapping per graph); "none" opens none and the model
+  // runs on the CPU (a chip below v73, which has no skel, or no Snapdragon at all).
+  std::string devs = jstr(env, devices);
+  if (!devs.empty()) setenv("GGML_HEXAGON_DEVICES", devs.c_str(), 1);
+  LOGI("GGML_HEXAGON_DEVICES=%s", devs.c_str());
   std::string adsp = dir + ";/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp";
   setenv("ADSP_LIBRARY_PATH", adsp.c_str(), 1);
   LOGI("ADSP_LIBRARY_PATH=%s", adsp.c_str());
