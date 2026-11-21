@@ -1,0 +1,46 @@
+diff --git a/src/core/ggml_extend.cpp b/src/core/ggml_extend.cpp
+index 0b64b9a..bffa3ec 100644
+--- a/src/core/ggml_extend.cpp
++++ b/src/core/ggml_extend.cpp
+@@ -1,6 +1,8 @@
+ #include "core/ggml_extend.h"
+ 
+ #include <cmath>
++#include <cstdlib>
++#include <cstring>
+ #include <utility>
+ 
+ #include "core/ggml_extend_backend.h"
+@@ -552,12 +554,27 @@ ggml_tensor* ggml_ext_attention_ext(ggml_context* ctx,
+         }
+         k_in = ggml_cast(ctx, k_in, GGML_TYPE_F16);
+ 
+-        v_in = ggml_ext_cont(ctx, ggml_permute(ctx, v_in, 0, 2, 1, 3));
+-        v_in = ggml_reshape_3d(ctx, v_in, d_head, L_k, n_kv_head * N);
+-        if (kv_scale != 1.0f) {
+-            v_in = ggml_ext_scale(ctx, v_in, kv_scale);
++        // nightmare (dit/101): V's permute folded into its f16 cast. The CONT wrote [d, L, heads] f32 and a second
++        // pass cast it; one strided cast reads the same bytes and writes half (Klein 1024²: 0.70 s CONT + 0.30 s
++        // CPY per render). NM_ATTN_V=cont restores the two passes; NM_ATTN_V=strided casts V in its own layout
++        // and hands flash attention the permuted f16 view (N == 1), with no layout copy at all.
++        static const char* v_mode = getenv("NM_ATTN_V");
++        const bool v_old          = v_mode != nullptr && strcmp(v_mode, "cont") == 0;
++        const bool v_strided      = v_mode != nullptr && strcmp(v_mode, "strided") == 0;
++        if (kv_scale == 1.0f && !v_old && v_strided && N == 1) {
++            v_in = ggml_cast(ctx, v_in, GGML_TYPE_F16);              // [d, heads, L_k] f16, packed
++            v_in = ggml_permute(ctx, v_in, 0, 2, 1, 3);              // a view: [d, L_k, heads]
++        } else if (kv_scale == 1.0f && !v_old) {
++            v_in = ggml_cast(ctx, ggml_permute(ctx, v_in, 0, 2, 1, 3), GGML_TYPE_F16);
++            v_in = ggml_reshape_3d(ctx, v_in, d_head, L_k, n_kv_head * N);
++        } else {
++            v_in = ggml_ext_cont(ctx, ggml_permute(ctx, v_in, 0, 2, 1, 3));
++            v_in = ggml_reshape_3d(ctx, v_in, d_head, L_k, n_kv_head * N);
++            if (kv_scale != 1.0f) {
++                v_in = ggml_ext_scale(ctx, v_in, kv_scale);
++            }
++            v_in = ggml_cast(ctx, v_in, GGML_TYPE_F16);
+         }
+-        v_in = ggml_cast(ctx, v_in, GGML_TYPE_F16);
+ 
+         if (mask_in != nullptr) {
+             // ggml_flash_attn_ext expects the mask as a contiguous F16 tensor shaped
