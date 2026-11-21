@@ -1,0 +1,18 @@
+diff --git a/dit/DitEngine.cpp b/dit/DitEngine.cpp
+index ef7a404..d74a68e 100644
+--- a/dit/DitEngine.cpp
++++ b/dit/DitEngine.cpp
+@@ -242,7 +242,12 @@ bool engine_generate(dit_ctx *ctx, const dit_gen_params *params, dit_progress_cb
+   // params have none): MOSS-Image's edit LoRA samples at shift 5 (its author's inference config).
+   if (const char *fs = std::getenv("NM_DIT_FLOW_SHIFT"); fs && fs[0] && std::strtof(fs, nullptr) > 0.0f)
+     gen.sample_params.flow_shift = std::strtof(fs, nullptr);
+-  if (params->sample_method && params->sample_method[0])
++  // nightmare (dit/104): "h3_spectral" is H3 Image's spectral sampler for this picture alone: Euler, plus the flag
++  // dit/102 reads from the sampler's extra args (no relaunch, no environment).
++  if (params->sample_method && std::strcmp(params->sample_method, "h3_spectral") == 0) {
++    gen.sample_params.sample_method = EULER_SAMPLE_METHOD;
++    gen.sample_params.extra_sample_args = "nm_h3_spectral=1";
++  } else if (params->sample_method && params->sample_method[0])
+     gen.sample_params.sample_method = str_to_sample_method(params->sample_method);
+   // ABI 108: an unknown name is SCHEDULER_COUNT, the model's own schedule.
+   if (params->scheduler && params->scheduler[0])
