@@ -227,7 +227,7 @@ internal fun ObjectChooser(
                         else -> {
                             val image = remember(src) { src.asImageBitmap() }
                             val shown = remember(mask, warmed, src) {
-                                MaskTaps.resolve(mask, pick = { t -> Parser.cachedPick(src, t) }) { x, y ->
+                                MaskTaps.resolve(mask, pick = { t -> Parser.cachedPick(src, t) }, subject = { com.abrah.nightmare.segment.SubjectMatte.cached(null, src) }) { x, y ->
                                     Segmenter.cached(src, x, y)?.candidates
                                 }
                             }

@@ -5207,7 +5207,8 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         guardedOpen(label) {
             // ⚠ The model FIRST: a recipe reads [SelectedModel] as it builds, so building first
             // would lay out a flow pointed at the old checkpoint and then retarget it.
-            spec?.let { selectModel(it) }
+            // ⭐ …except a background remover, which its one flow names itself and no other flow may inherit ([ModelSpec.matte]).
+            spec?.takeIf { !it.matte }?.let { selectModel(it) }
             openRecipeNow(recipe)
             if (videoType != null) canvas.workflow.graph.nodes.firstOrNull { it.type in com.abrah.nightmare.VIDEO_MODEL_TYPES }
                 ?.let { setVideoModel(it.id, videoType) }
@@ -6117,6 +6118,64 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
             ) + target)
             done(null)
         }
+    }
+
+    /**
+     * ⭐ The mask editor's Auto (RMBG 3.0, GitHub #136): finds the subject of the node's photo and keeps its matte
+     * ([com.abrah.nightmare.segment.SubjectMatte]); [done] gets null when the mask can take [com.abrah.nightmare.MaskOp.Subject],
+     * or why not. ⚠ A run of its own: the DiT engine is relaunched on RMBG 3.0 (about a minute on an 8 Elite), so it is
+     * refused while anything else runs, as any run is, and the next render relaunches its own model.
+     */
+    fun autoSubject(nodeId: String, done: (String?) -> Unit) {
+        val ctx = getApplication<Application>()
+        val spec = ModelCatalog.byId(ModelCatalog.RMBG3) ?: return done(null)
+        val photo = canvas.pictureInto(nodeId, nodeTypes)?.let { ops.images.get(it) }
+            ?: return done(text(R.string.mask_no_picture_to_pick))
+        if (com.abrah.nightmare.segment.SubjectMatte.cached(ctx, photo) != null) return done(null)
+        if (!spec.installed(ctx)) return done(text(R.string.mask_auto_download, spec.label))
+        // ⭐ The photo's shape at about a megapixel on the engine's grid, the size Bria measured it at.
+        val scale = kotlin.math.sqrt(1024.0 * 1024.0 / (photo.width.toDouble() * photo.height))
+        val max = ModelCatalog.ditMax(spec.family)
+        val w = ModelCatalog.ditSnap((photo.width * scale).toInt(), max)
+        val h = ModelCatalog.ditSnap((photo.height * scale).toInt(), max)
+        // ⭐ The edit sampler's own key, so the launch gets the budget a Remove background run would.
+        val key = com.abrah.nightmare.SdSampler.FIBO2.contextKey(
+            Node("auto", com.abrah.nightmare.SdSampler.FIBO2.name,
+                mapOf("model" to spec.id, "width" to "$w", "height" to "$h"), mapOf("image" to Source("photo"))),
+        )
+        val refused = run("auto mask", uses = { listOf(spec.id) }) {
+            try {
+                if (!ops.ensureBackend(key)) return@run done(text(R.string.upscale_backend_failed))
+                val png = withContext(Dispatchers.Default) {
+                    ImageStore.encodePng(android.graphics.Bitmap.createScaledBitmap(photo, w, h, true))
+                }
+                say("auto mask: ${spec.id} ${w}x$h")
+                com.abrah.nightmare.BackendIdle.begin()
+                val r = try {
+                    Ops.generate(
+                        prompt = Matte.INSTRUCTION, negative = "", steps = spec.steps, cfg = 1.0, seed = 0,
+                        width = w, height = h, imagePng = png, denoise = 1.0,
+                    )
+                } finally { com.abrah.nightmare.BackendIdle.end() }
+                when (r) {
+                    is Ops.Result.Err -> done(text(R.string.mask_pick_failed, "http ${r.code}"))
+                    is Ops.Result.Ok -> {
+                        val matte = withContext(Dispatchers.Default) {
+                            android.graphics.BitmapFactory.decodeByteArray(r.value.png, 0, r.value.png.size)
+                                ?.let { com.abrah.nightmare.segment.SubjectMatte.put(ctx, photo, it) }
+                        }
+                        done(if (matte == null) text(R.string.mask_pick_failed, "no matte") else null)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                done(null)
+                throw e
+            } catch (e: Exception) {
+                say("auto mask failed. ${e.message}", bad = true)
+                done(text(R.string.mask_pick_failed, e.message ?: e.javaClass.simpleName))
+            }
+        }
+        refused?.let { done(it) }
     }
 
     private fun pickedIn(mask: com.abrah.nightmare.MaskState): List<String> =

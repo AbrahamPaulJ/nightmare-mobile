@@ -302,6 +302,8 @@ internal fun MaskToolbar(
      * a switch, a tool, and the model the tool needs.
      */
     onPickMask: ((node: String, target: String, done: (String?) -> Unit) -> Unit)? = null,
+    /** ⭐ The mask editor's Auto (RMBG 3.0): find the photo's subject; done(null) when the mask can take it. */
+    onAutoSubject: ((node: String, done: (String?) -> Unit) -> Unit)? = null,
     parserInstalled: Boolean = true,
     parserRow: com.abrah.nightmare.ui.ToolRow? = null,
     onInstallParser: (() -> Unit)? = null,
@@ -394,12 +396,14 @@ internal fun MaskToolbar(
             com.abrah.nightmare.MaskTaps.resolve(
                 ringed(stored),
                 pick = { t -> par.cachedPick(photoBmp, t) },
+                subject = { com.abrah.nightmare.segment.SubjectMatte.cached(null, photoBmp) },
             ) { x, y -> seg.cached(photoBmp, x, y)?.candidates },
         )
     }
     var full by remember(stored, frame, photo, shownObjects, objectCuts) { mutableStateOf<com.abrah.nightmare.MaskState?>(null) }
     if ((com.abrah.nightmare.MaskTaps.hasTaps(stored) && seg.installed) ||
-        (com.abrah.nightmare.MaskTaps.hasPicks(stored) && par.installed)
+        (com.abrah.nightmare.MaskTaps.hasPicks(stored) && par.installed) ||
+        com.abrah.nightmare.MaskTaps.hasSubject(stored)
     ) {
         androidx.compose.runtime.LaunchedEffect(stored, frame, photo, shownObjects, objectCuts) {
             full = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -408,6 +412,7 @@ internal fun MaskToolbar(
                         com.abrah.nightmare.MaskTaps.resolve(
                             ringed(stored),
                             pick = { t -> par.pick(context, photoBmp, t) },
+                            subject = { com.abrah.nightmare.segment.SubjectMatte.cached(context, photoBmp) },
                         ) { x, y -> seg.segment(context, photoBmp, x, y)?.candidates },
                     )
                 }.getOrNull()
@@ -439,6 +444,15 @@ internal fun MaskToolbar(
     if (!canPick && tool == MaskTool.PICK) tool = MaskTool.BRUSH
     var picking by remember { mutableStateOf(false) }
     var pickNote by remember { mutableStateOf<String?>(null) }
+    // ⭐ Auto (RMBG 3.0, GitHub #136): offered on every phone that can run it, installed or not, so a tap can say where
+    // to get it; hidden on a chip it would only refuse.
+    val canAuto = onAutoSubject != null && remember {
+        com.abrah.nightmare.ModelCatalog.byId(com.abrah.nightmare.ModelCatalog.RMBG3)
+            ?.buildFor(com.abrah.nightmare.DeviceProbe.caps()) != null
+    }
+    var autoBusy by remember { mutableStateOf(false) }
+    var autoNote by remember { mutableStateOf<String?>(null) }
+    val hasAuto = stored.ops.any { it is com.abrah.nightmare.MaskOp.Subject }
     var warmAtPick by remember { mutableStateOf(true) }
     // ⭐ The chips ARE the picks in the mask, so nothing else is stored.
     val picked = stored.ops.filterIsInstance<com.abrah.nightmare.MaskOp.Pick>()
@@ -778,6 +792,35 @@ internal fun MaskToolbar(
                         shape = RoundedCornerShape(10.dp),
                     )
                 }
+                // ⭐ Auto: the photo's whole subject, its soft edge kept. An ACTION, not a tool: one tap fills the mask,
+                // a second takes it out again; Invert makes it the background.
+                if (canAuto) {
+                    FilterChip(
+                        selected = hasAuto,
+                        enabled = !autoBusy,
+                        onClick = {
+                            autoNote = null
+                            if (hasAuto) {
+                                onEditMask(nodeId) { m -> m.copy(ops = m.ops.filterNot { it is com.abrah.nightmare.MaskOp.Subject }) }
+                            } else {
+                                autoBusy = true
+                                onAutoSubject?.invoke(nodeId) { note ->
+                                    autoBusy = false
+                                    autoNote = note
+                                    if (note == null) onEditMask(nodeId) { it.plus(com.abrah.nightmare.MaskOp.Subject) }
+                                }
+                            }
+                        },
+                        label = {
+                            Icon(
+                                com.abrah.nightmare.ui.SparkleIcon,
+                                contentDescription = stringResource(R.string.cd_auto_subject),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                }
             }
             // ⚠⚠ ICONS, and DreamUI's icons — undo, invert, clear. These were
             // two TEXT buttons and no invert at all, though `MaskOp.Invert` has
@@ -933,6 +976,13 @@ internal fun MaskToolbar(
                 }
             }
         }
+        if (tools && (autoBusy || autoNote != null)) {
+            Text(
+                if (autoBusy) stringResource(R.string.mask_auto_working) else autoNote.orEmpty(),
+                style = NoteTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (tools && (tool == MaskTool.PICK || pickNote != null)) {
             Text(
                 when {
@@ -1084,8 +1134,8 @@ internal fun MaskToolbar(
                     }
                     // ⭐ Saved #8052 (the user, 2026-11-14): what is selected, saved with its background removed, a
                     // transparent PNG in the gallery ([com.abrah.nightmare.MaskCutout]). The mask as it runs: taps and
-                    // picks resolved on the whole photo, strokes, grow and feather.
-                    if (canTap && stored.ops.isNotEmpty()) {
+                    // picks resolved on the whole photo, strokes, grow and feather. ⭐ Also for Auto's subject (RMBG 3.0).
+                    if ((canTap || hasAuto) && stored.ops.isNotEmpty()) {
                         val cutSaved = stringResource(R.string.cutout_saved)
                         val cutEmpty = stringResource(R.string.cutout_empty)
                         com.abrah.nightmare.ui.StudioTextButton(
@@ -1096,6 +1146,7 @@ internal fun MaskToolbar(
                                             val resolved = com.abrah.nightmare.MaskTaps.resolve(
                                                 ringed(stored),
                                                 pick = { t -> par.pick(context, photoBmp, t) },
+                                                subject = { com.abrah.nightmare.segment.SubjectMatte.cached(context, photoBmp) },
                                             ) { x, y -> seg.segment(context, photoBmp, x, y)?.candidates }
                                             val mask = com.abrah.nightmare.MaskRaster.rasterise(resolved, photoBmp.width, photoBmp.height)
                                             val cut = com.abrah.nightmare.MaskCutout.cut(photoBmp, mask)

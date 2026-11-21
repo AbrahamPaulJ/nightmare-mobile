@@ -133,6 +133,7 @@
     <string name="battery_body">这台手机的电池管理可能会在应用不在屏幕上时停止它，从而中断正在进行的生成，或卸载已加载的模型。允许它不受限制地运行即可避免这种情况。</string>
     <string name="battery_title">在后台继续生成</string>
     <string name="cd_pick_by_name">自动分割</string>
+    <string name="cd_auto_subject">遮罩主体（RMBG 3.0）</string>
     <string name="cd_redo_stroke">重做</string>
     <string name="embeddings_body">以文件形式保存的训练概念，而不是检查点，来自 Civitai 等网站的 .safetensors。在提示词中写出它的名字即可使用。</string>
     <string name="embeddings_title">嵌入 (Embeddings)</string>
@@ -144,6 +145,8 @@
     <string name="mask_pick_hint">选择要重绘的内容。再点一次标签即可取消。此工作流会记住你的选择，并应用到每张新照片。</string>
     <string name="mask_pick_show">启用自动遮罩</string>
     <string name="mask_pick_working">正在读取图片…</string>
+    <string name="mask_auto_working">正在用 RMBG 3.0 查找主体，大约一分钟</string>
+    <string name="mask_auto_download">请在“模型”中下载 %1$s 以遮罩主体</string>
     <string name="mb_of_total">%1$d / %2$d MB</string>
     <string name="parser_loading">正在读取图片，第一次选择需要稍等…</string>
     <string name="video">视频</string>
@@ -796,6 +799,8 @@
     <string name="flow_swap_i2i_about">用 Swap 模型重新演绎照片，并支持相同的三项功能。除非提供其他图片，否则 ControlNet 会读取照片本身。</string>
     <string name="flow_flux_edit_name">图像编辑</string>
     <string name="flow_flux_edit_about">适用于配备 8 Gen 3 或更新芯片（8 Gen 3 上为 alpha）的 FLUX.2 Klein、FLUX.3 Klein、Qwen Image 2.1 或 Fibo 2.0 Edit。输入照片和提示词：整张图片会根据提示词重新渲染，而不是轻微调整。可将第二张图片连接到 reference 端口，并在提示词中称它们为 image 1 和 image 2。</string>
+    <string name="flow_remove_bg_name">移除背景</string>
+    <string name="flow_remove_bg_about">把照片的背景变为透明，保存为 PNG。头发和柔和的边缘依然柔和。Bria 的 RMBG 3.0，需要 8 Gen 3 或更新芯片。</string>
     <string name="flow_t2v_name">文生视频</string>
     <string name="flow_t2v_about">提示词生成视频。默认使用 Wan 2.2 Turbo（需要几分钟，效果好得多）；将视频节点切换为 Neodragon 约 30 秒生成 2 秒。</string>
     <string name="flow_i2v_name">图生视频</string>
@@ -1007,6 +1012,9 @@
     <string name="run_download_auto_segmenter">节点“%1$s”：此遮罩是按名称选取的，请在“模型 → 工具”中下载 %2$s</string>
     <string name="run_finding_tapped_objects">正在查找你点选的物体</string>
     <string name="run_finding_picked_objects">正在查找你选择的内容</string>
+    <string name="run_matte_needs_photo">节点“%1$s”：请接入一张照片来移除它的背景</string>
+    <string name="run_matte_done">背景已移除，%1$s</string>
+    <string name="run_subject_not_found">主体遮罩是在另一张图片上做的。请打开遮罩并重新查找主体</string>
     <string name="run_nothing_found_tapped">点选处没有找到任何东西，请涂抹一个区域，然后再次运行</string>
     <string name="run_named_objects_not_found">这张图片里没有找到%1$s，请涂抹一个区域，或在遮罩编辑器中选择其他内容</string>
     <string name="word_or">或</string>

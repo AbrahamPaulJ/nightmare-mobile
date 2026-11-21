@@ -1496,7 +1496,9 @@ class SdSampler(
     }
 
     private suspend fun render(ctx: NodeCtx, node: Node, inputs: Map<String, Value>): Value {
+        // ⭐ A background remover ([ModelSpec.matte]) takes no prompt: its instruction is fixed ([runDit]).
         val wired = inputs["prompt"] as? Value.Prompt
+            ?: Value.Prompt("", "").takeIf { ModelCatalog.byId(effectiveParams(node)["model"].orEmpty())?.matte == true }
             ?: throw IllegalArgumentException(
                 "node \"${node.id}\": nothing is wired into \"prompt\". " +
                     "drag a Prompt node out of the palette and connect it"
@@ -1639,7 +1641,7 @@ class SdSampler(
         // missing-model case, read the way a missing checkpoint reads
         // (`docs/SEGMENTER.md` §3, the user's call 2026-09-16). Rendering
         // without the mask would repaint the wrong area confidently.
-        val painted = if (!MaskTaps.hasTaps(stored) && !MaskTaps.hasPicks(stored)) stored else {
+        val painted = if (!MaskTaps.hasTaps(stored) && !MaskTaps.hasPicks(stored) && !MaskTaps.hasSubject(stored)) stored else {
             val android = ctx.android
             if (MaskTaps.hasTaps(stored) &&
                 (android == null || !com.abrah.nightmare.segment.Segmenter.isInstalled(android))
@@ -1666,7 +1668,12 @@ class SdSampler(
                     )
                 )
             }
-            ctx.say(
+            // ⭐ Auto's subject ([MaskOp.Subject]) is found in the mask editor, where it can take its minute; a run uses
+            // the matte kept for THIS photo, and says so by name when there is none rather than render without it.
+            if (MaskTaps.hasSubject(stored) && (android == null || com.abrah.nightmare.segment.SubjectMatte.cached(android, src) == null)) {
+                throw NeedsInput(ctx.text(R.string.run_subject_not_found, "the subject mask was made on another picture. Open the mask and find the subject again"))
+            }
+            if (MaskTaps.hasTaps(stored) || MaskTaps.hasPicks(stored)) ctx.say(
                 if (MaskTaps.hasTaps(stored)) ctx.text(R.string.run_finding_tapped_objects, "finding the objects you tapped")
                 else ctx.text(R.string.run_finding_picked_objects, "finding what you picked")
             )
@@ -1675,6 +1682,7 @@ class SdSampler(
                 pick = { t ->
                     android?.let { com.abrah.nightmare.segment.Parser.pick(it, src, t) }
                 },
+                subject = { android?.let { com.abrah.nightmare.segment.SubjectMatte.cached(it, src) } },
             ) { x, y ->
                 com.abrah.nightmare.segment.Segmenter.segment(android!!, src, x, y)?.candidates
             }
@@ -1686,7 +1694,7 @@ class SdSampler(
         // applied to every new photo (Enable auto mask) that would happen
         // without the person ever opening the editor, so it is said by name.
         if (inpaint && !padded && painted.ops.none { it !is MaskOp.Invert } &&
-            (MaskTaps.hasPicks(stored) || MaskTaps.hasTaps(stored))
+            (MaskTaps.hasPicks(stored) || MaskTaps.hasTaps(stored) || MaskTaps.hasSubject(stored))
         ) {
             val names = stored.ops.filterIsInstance<MaskOp.Pick>()
                 .mapNotNull { com.abrah.nightmare.segment.Parser.target(it.target) }
@@ -2318,9 +2326,11 @@ class SdSampler(
         // as the SD path does. Matching the whole photo pulled a framed dark corner of a bright
         // photo toward the photo's brightness.
         var framed: android.graphics.Bitmap? = null
+        var source: android.graphics.Bitmap? = null
         val png = photo?.let {
             val src = ctx.images.get(it.id)
                 ?: throw IllegalStateException("node \"${node.id}\": image ${it.id} is no longer in the store")
+            source = src
             val (frame, _) = CropNode.render(
                 src,
                 p["x"]?.toFloatOrNull() ?: 0f, p["y"]?.toFloatOrNull() ?: 0f,
@@ -2405,11 +2415,16 @@ class SdSampler(
                 else -> ctx.text(R.string.run_reimagining_picture, "re-imagining the picture")
             }
         )
+        // ⭐ A background remover ([ModelSpec.matte]): Bria's instruction whatever the prompt says, and a picture to work on.
+        val matte = ModelCatalog.byId(p["model"].orEmpty())?.matte == true
+        if (matte && png == null) {
+            throw IllegalArgumentException(ctx.text(R.string.run_matte_needs_photo, "node \"%1\$s\": wire in a photo to remove its background", node.id))
+        }
         // ⚠ The same release as [runDitMasked]: a DiT checkpoint needs the RAM more than a warm model.
         PictureModels.releaseAll()
         val r = ctx.host.generate(
-            prompt = prompt.positive,
-            negative = prompt.negative,
+            prompt = if (matte) Matte.INSTRUCTION else prompt.positive,
+            negative = if (matte) "" else prompt.negative,
             steps = p["steps"]?.toIntOrNull() ?: 4,
             cfg = p["cfg"]?.toDoubleOrNull() ?: 1.0,
             seed = p["seed"]?.toIntOrNull() ?: 0,
@@ -2434,8 +2449,28 @@ class SdSampler(
         }
         val bmp = android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
+        if (matte) return matteCut(ctx, node, p, bmp, framed!!, source!!)
         val made = matched(ctx, p, Value.Image(ctx.images.put(bmp), bmp.width, bmp.height), framed)
         return if (png == null) made else keepPhotoOnly(ctx, node, p, made)
+    }
+
+    /**
+     * ⭐ RMBG 3.0's matte made the photo's alpha ([Matte.cut]). ⭐ The WHOLE photo at its own pixels when the frame is
+     * the whole photo and the canvas has its shape (the Remove background flow fits the canvas to the photo), as
+     * Bria's example scales the matte to the source; otherwise the framed picture at the canvas, cut to the photo's
+     * part like any render ([keepPhotoOnly]).
+     */
+    private fun matteCut(
+        ctx: NodeCtx, node: Node, p: Map<String, String>,
+        matte: android.graphics.Bitmap, framed: android.graphics.Bitmap, source: android.graphics.Bitmap,
+    ): Value.Image {
+        val whole = (p["x"]?.toFloatOrNull() ?: 0f) == 0f && (p["y"]?.toFloatOrNull() ?: 0f) == 0f &&
+            (p["w"]?.toFloatOrNull() ?: 1f) == 1f && (p["h"]?.toFloatOrNull() ?: 1f) == 1f &&
+            kotlin.math.abs(source.width.toDouble() / source.height - matte.width.toDouble() / matte.height) < 0.02
+        val cut = Matte.cut(if (whole) source else framed, matte)
+        ctx.say(ctx.text(R.string.run_matte_done, "background removed, %1\$s", "${cut.width}x${cut.height}"))
+        val img = Value.Image(ctx.images.put(cut), cut.width, cut.height)
+        return if (whole) img else keepPhotoOnly(ctx, node, p, img)
     }
 
     /**

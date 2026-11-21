@@ -22,6 +22,7 @@ The list is ordered by **what the flow asks of your phone**, lightest first:
 | [Animate a portrait](face-edit.md#animate-a-portrait) | A photo's face moving like the face in a video | the Face editor (180 MB) |
 | **Advanced**: [Text to image / Image to image with LoRA, ControlNet, IP-Adapter](advanced.md) | The same two jobs, steered by LoRAs, a ControlNet and a reference picture | a Swap model (SD 1.5 or SDXL) |
 | [Image edit](image-edit.md) | A photo changed to follow an instruction | FLUX.2 or Qwen Image, 8 Gen 3 |
+| [Remove background](remove-background.md) | A photo with a transparent background, soft edges kept | RMBG 3.0, 8 Gen 3, 12 GB |
 | [Text to video](video.md) | A prompt in, a 2-second clip out | the video models, 8 Elite |
 | [Image to video](video.md#image-to-video) | A photo brought to life | the video models, 8 Elite |
 | [Text to video, Wan 2.2](video.md#wan-22-better-clips-slower) | Up to 5 seconds, much better, under 3 minutes | Wan 2.2, 8 Elite (alpha on 8 Gen 3) |

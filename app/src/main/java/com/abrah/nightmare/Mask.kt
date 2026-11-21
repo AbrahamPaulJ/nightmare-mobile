@@ -88,6 +88,14 @@ sealed interface MaskOp {
     data class Pick(val target: String) : MaskOp
 
     /**
+     * ⭐ The photo's SUBJECT, found by RMBG 3.0 (the mask editor's Auto, GitHub #136): its soft matte, hair and all.
+     * Stored as this word like a [Tap], since a mask is a string; the matte is cached per PHOTO, on disk
+     * ([segment.SubjectMatte]), because finding it takes the DiT engine about a minute. ⚠ Rasterises to NOTHING until
+     * [MaskTaps.resolve] turns it into a [Placed]; the sampler refuses one it cannot resolve.
+     */
+    data object Subject : MaskOp
+
+    /**
      * ⚠ A resolved region: an ALPHA_8 bitmap stretched over the normalised rect
      * [x],[y],[w],[h]. IN MEMORY ONLY — [MaskState.encode] never writes one; it
      * exists so framing and rasterising treat a region as geometry like a stroke.
@@ -132,6 +140,10 @@ object MaskTaps {
     fun hasTaps(state: MaskState): Boolean =
         state.ops.any { it is MaskOp.Tap || (it is MaskOp.Layer && hasTaps(MaskState(it.ops))) }
 
+    /** ⭐ Whether anything here needs RMBG 3.0's matte ([MaskOp.Subject]). */
+    fun hasSubject(state: MaskState): Boolean =
+        state.ops.any { it is MaskOp.Subject || (it is MaskOp.Layer && hasSubject(MaskState(it.ops))) }
+
     /** ⭐ Whether anything here needs the PARSER (`segment.Parser`). */
     fun hasPicks(state: MaskState): Boolean =
         state.ops.any { it is MaskOp.Pick || (it is MaskOp.Layer && hasPicks(MaskState(it.ops))) }
@@ -150,16 +162,19 @@ object MaskTaps {
     fun resolve(
         state: MaskState,
         pick: ((String) -> android.graphics.Bitmap?)? = null,
+        /** ⭐ The photo's subject matte ([MaskOp.Subject]), ALPHA_8; null leaves it unresolved. */
+        subject: (() -> android.graphics.Bitmap?)? = null,
         segment: (Float, Float) -> List<android.graphics.Bitmap>?,
     ): MaskState {
-        if (!hasTaps(state) && !hasPicks(state)) return state
+        if (!hasTaps(state) && !hasPicks(state) && !hasSubject(state)) return state
         return state.copy(
             ops = state.ops.mapNotNull { op ->
                 when (op) {
                     is MaskOp.Tap -> segment(op.x, op.y)?.takeIf { it.isNotEmpty() }
                         ?.let { MaskOp.Placed(it[op.k.coerceIn(0, it.size - 1)]) }
                     is MaskOp.Pick -> pick?.invoke(op.target)?.let { MaskOp.Placed(it) }
-                    is MaskOp.Layer -> MaskOp.Layer(resolve(MaskState(op.ops), pick, segment).ops)
+                    is MaskOp.Subject -> subject?.invoke()?.let { MaskOp.Placed(it) }
+                    is MaskOp.Layer -> MaskOp.Layer(resolve(MaskState(op.ops), pick, subject, segment).ops)
                     else -> op
                 }
             },
@@ -225,6 +240,7 @@ data class MaskState(
                 is MaskOp.Tap -> "t${fmt(op.x)},${fmt(op.y)},${op.k}"
                 // ⚠ The target's id, which is `[a-z]+` — no separator to escape.
                 is MaskOp.Pick -> "p${op.target}"
+                is MaskOp.Subject -> "a"
                 is MaskOp.ObjectRing -> "o${op.id}"
                 // ⚠ Never stored — see [MaskOp.Placed] and [MaskOp.Layer].
                 is MaskOp.Placed, is MaskOp.Layer -> ""
@@ -275,6 +291,7 @@ data class MaskState(
                     when {
                         part.isBlank() -> null
                         part == "i" -> MaskOp.Invert
+                        part == "a" -> MaskOp.Subject
                         part.startsWith("o") -> part.substring(1).toIntOrNull()?.let { MaskOp.ObjectRing(it) }
                         part.startsWith("p") ->
                             part.substring(1).takeIf { it.isNotBlank() }?.let { MaskOp.Pick(it) }
@@ -388,6 +405,8 @@ object MaskFraming {
                     // One that reaches here unresolved has no parser behind it
                     // and draws nothing, which is the refusal's job to report.
                     is MaskOp.Pick -> op
+                    // ⚠ Like a Pick: a name, resolved to a [Placed] before this runs.
+                    is MaskOp.Subject -> op
                     // ⚠ Resolved before framing, like a Pick; one here draws nothing.
                     is MaskOp.ObjectRing -> op
                     is MaskOp.Placed -> op.copy(

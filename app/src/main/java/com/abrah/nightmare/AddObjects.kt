@@ -394,6 +394,7 @@ object AddObjects {
         MaskTaps.resolve(
             mask,
             pick = { t -> com.abrah.nightmare.segment.Parser.pick(context, source, t) },
+            subject = { com.abrah.nightmare.segment.SubjectMatte.cached(context, source) },
         ) { x, y -> com.abrah.nightmare.segment.Segmenter.segment(context, source, x, y)?.candidates }
 
     // ---- pixels ------------------------------------------------------------

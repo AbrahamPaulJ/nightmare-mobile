@@ -245,6 +245,16 @@ Fibo 2.0 Dev
     cross-attention, perceiver and noise refiner weights quantized to Q4_0. Downloaded by
     the app at the user's request; not included here. Text encoder and VAE as for Edit Turbo.
 
+RMBG 3.0
+    Bria AI; GGUF by this project
+    https://huggingface.co/briaai/RMBG-3.0
+    https://huggingface.co/briaai/RMBG-3.0-Comfy
+    https://huggingface.co/AbrahamPJ/rmbg-3.0-q4_0-gguf
+    Non-commercial use only (CC BY-NC 4.0). Modified: Bria's BF16 weights stored in the
+    types of our Fibo 2.0 Edit Turbo GGUF (Q4_0 for the large matrices). Downloaded by the
+    app at the user's request; not included here. Text encoder, vision tower and VAE as for
+    Fibo 2.0 Edit Turbo.
+
 MiniMax H3 (FastH3 4-step Preview v1 Dense)
     MiniMax; distilled by FastVideo; GGUF by Gestura, requantized by this project
     https://huggingface.co/MiniMaxAI/MiniMax-H3

@@ -112,6 +112,34 @@ class DitRefLogTest {
         assertEquals(listOf(16, 24, 32), widths)
     }
 
+    /**
+     * ⭐ Remove background (RMBG 3.0, GitHub #136): no prompt node, Bria's instruction is what the engine gets, and the
+     * photo comes back at its own pixels with the matte's brightness as its alpha (the fake matte is 0x112233, luma 31).
+     */
+    @Test
+    fun aBackgroundRemoverSendsItsInstructionAndCutsThePhoto() = runBlocking {
+        val images = ImageStore()
+        val g = Graph(listOf(
+            Node("photo", "core.image", mapOf("uri" to photoFile())),
+            Node("sample", SdSampler.FIBO2.name,
+                mapOf("model" to ModelCatalog.RMBG3, "width" to "64", "height" to "64", "steps" to "4", "cfg" to "1.0", "seed" to "0"),
+                mapOf("image" to Source("photo"))),
+        ))
+        val r = Executor(host, images = images, android = ApplicationProvider.getApplicationContext()).run(g)
+        assertTrue("error=${r.error}", r.error == null)
+        assertEquals(Matte.INSTRUCTION, host.prompt)
+        val out = images.get((r.outputs["sample"] as Value.Image).id)!!
+        assertEquals(64, out.width)
+        val px = out.getPixel(10, 10)
+        assertEquals(31, px ushr 24)
+        // ⚠ The photo's colour, not the matte's (premultiplied storage rounds a channel by at most a step or two).
+        assertTrue(Integer.toHexString(px), kotlin.math.abs(((px shr 16) and 0xFF) - 0x33) <= 4 && kotlin.math.abs((px and 0xFF) - 0xAA) <= 6)
+        // ⭐ …and without a photo it says what to wire rather than rendering a matte of nothing.
+        val bare = Executor(host, android = ApplicationProvider.getApplicationContext())
+            .run(Graph(listOf(g.byId.getValue("sample").copy(inputs = emptyMap()))))
+        assertTrue("${bare.error}", bare.error?.contains("photo") == true)
+    }
+
     /** ⚠ Same for FLUX.2 — the family is not the test, having a picture is. */
     @Test
     fun aKleinTextToImageSaysNothingEither() = runBlocking {
@@ -176,6 +204,9 @@ private class WholeRenderHost : OpHost {
     /** The last scheduler a whole render was sent. */
     var scheduler: String? = null
 
+    /** The last whole render's prompt. */
+    var prompt: String? = null
+
     /** The references the last whole render was sent, in order. */
     var refs: List<ByteArray> = emptyList()
 
@@ -194,6 +225,7 @@ private class WholeRenderHost : OpHost {
         scheduler: String?,
     ): Ops.Result<Ops.Decoded> {
         this.scheduler = scheduler
+        this.prompt = prompt
         this.refs = referencePngs
         this.mask = maskPng
         this.denoise = denoise

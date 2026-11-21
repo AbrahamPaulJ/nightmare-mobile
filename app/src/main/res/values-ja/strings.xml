@@ -167,7 +167,10 @@
 <string name="segmenter_loading">セグメンターを読み込み中です。画像への最初のタップには少し時間がかかります…</string>
 <string name="parser_loading">画像を読み取り中です。最初の選択には少し時間がかかります…</string>
 <string name="cd_pick_by_name">自動セグメント</string>
+<string name="cd_auto_subject">被写体をマスク (RMBG 3.0)</string>
 <string name="mask_pick_working">画像を読み取り中…</string>
+<string name="mask_auto_working">RMBG 3.0 で被写体を探しています。1 分ほどかかります</string>
+<string name="mask_auto_download">被写体をマスクするには、モデルで %1$s をダウンロードしてください</string>
 <string name="mask_pick_hint">描き直すものを選んでください。チップをもう一度タップすると解除されます。このフローは選択を記憶し、新しい写真すべてに適用します。</string>
 <string name="mask_pick_show">自動マスクを有効化</string>
 <string name="mask_layer_image">レイヤー 1 · 画像</string>
@@ -810,6 +813,8 @@
 <string name="flow_swap_i2i_about">Swap モデルで写真を描き直します。同じ3つが使えます。ControlNet は、別の画像を与えない限り写真自体を読みます。</string>
 <string name="flow_flux_edit_name">画像編集</string>
 <string name="flow_flux_edit_about">FLUX.2 Klein、FLUX.3 Klein、Qwen Image 2.1、Fibo 2.0 Edit を 8 Gen 3 以降で使えます（8 Gen 3 ではアルファ版）。写真とプロンプトを与えると、少しずつ寄せるのではなく、画像全体をそれに沿って再レンダリングします。2枚目の画像を参照ポートに接続し、プロンプトの中で image 1、image 2 と呼んでください。</string>
+<string name="flow_remove_bg_name">背景を削除</string>
+<string name="flow_remove_bg_about">写真の背景を透明にして PNG で保存します。髪や柔らかい輪郭はそのまま柔らかく残ります。Bria の RMBG 3.0、8 Gen 3 以降で使えます。</string>
 <string name="flow_t2v_name">テキストから動画</string>
 <string name="flow_t2v_about">プロンプトからクリップを作ります。デフォルトは Wan 2.2 Turbo（数分かかりますが格段に高品質）です。約30秒で2秒のクリップにするなら、動画ノードを Neodragon に切り替えてください。</string>
 <string name="flow_i2v_name">画像から動画</string>
@@ -1021,6 +1026,9 @@
 <string name="run_download_auto_segmenter">ノード \"%1$s\": このマスクは名前で選ばれました。モデル → ツール で %2$s をダウンロードしてください</string>
 <string name="run_finding_tapped_objects">タップした対象を探しています</string>
 <string name="run_finding_picked_objects">選択したものを探しています</string>
+<string name="run_matte_needs_photo">ノード \"%1$s\": 背景を削除する写真をつないでください</string>
+<string name="run_matte_done">背景を削除しました、%1$s</string>
+<string name="run_subject_not_found">被写体マスクは別の画像で作られました。マスクを開いて、もう一度被写体を探してください</string>
 <string name="run_nothing_found_tapped">タップした場所には何も見つかりませんでした。範囲を塗ってから、もう一度実行してください</string>
 <string name="run_named_objects_not_found">この画像に %1$s は見つかりませんでした。範囲を塗るか、マスクエディタで別のものを選んでください</string>
 <string name="word_or">" または "</string>

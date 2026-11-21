@@ -359,6 +359,8 @@ fun NodeInspector(
     onCancelSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and the PARSER's half of the same, for Pick by name. */
     onPickMask: ((node: String, target: String, done: (String?) -> Unit) -> Unit)? = null,
+    /** ⭐ The mask editor's Auto (RMBG 3.0): find the photo's subject; done(null) when the mask can take it. */
+    onAutoSubject: ((node: String, done: (String?) -> Unit) -> Unit)? = null,
     /**
      * ⭐⭐ Translate a Russian/Chinese prompt into English (`docs/TRANSLATE.md`).
      * [done] gets the English, for a focused field holding its own copy. ⚠ Null
@@ -745,6 +747,7 @@ fun NodeInspector(
             segmenterRow = segmenterRow,
             onCancelSegmenter = onCancelSegmenter,
             onPickMask = onPickMask,
+            onAutoSubject = onAutoSubject,
             onTranslate = onTranslate,
             onDescribe = onDescribe,
             parserInstalled = parserInstalled,
@@ -1536,6 +1539,8 @@ internal fun NodeInspectorBody(
     onCancelSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and the PARSER's half of the same, for Pick by name. */
     onPickMask: ((node: String, target: String, done: (String?) -> Unit) -> Unit)? = null,
+    /** ⭐ The mask editor's Auto (RMBG 3.0): find the photo's subject; done(null) when the mask can take it. */
+    onAutoSubject: ((node: String, done: (String?) -> Unit) -> Unit)? = null,
     /**
      * ⭐⭐ Translate a Russian/Chinese prompt into English (`docs/TRANSLATE.md`).
      * [done] gets the English, for a focused field holding its own copy. ⚠ Null
@@ -2380,6 +2385,7 @@ internal fun NodeInspectorBody(
                     segmenterRow = segmenterRow,
                     onCancelSegmenter = onCancelSegmenter,
                     onPickMask = onPickMask,
+                    onAutoSubject = onAutoSubject,
                     parserInstalled = parserInstalled,
                     parserRow = parserRow,
                     onInstallParser = onInstallParser,
@@ -4112,6 +4118,7 @@ private fun InpaintEditors(
                 com.abrah.nightmare.MaskTaps.resolve(
                     stored,
                     pick = { t -> photoBmp?.let { com.abrah.nightmare.segment.Parser.cachedPick(it, t) } },
+                    subject = { photoBmp?.let { com.abrah.nightmare.segment.SubjectMatte.cached(null, it) } },
                 ) { x, y ->
                     photoBmp?.let { com.abrah.nightmare.segment.Segmenter.cached(it, x, y)?.candidates }
                 },

@@ -651,6 +651,12 @@ data class ModelSpec(
      */
     val fixedSizes: Boolean = false,
     /**
+     * ⭐⭐ A background remover, not a picture model (RMBG 3.0, GitHub #136): an editor that always gets Bria's fixed
+     * instruction ([Matte.INSTRUCTION]), whatever the prompt says, and whose grey matte becomes the photo's alpha
+     * ([Matte.cut]). Opened by the Remove background flow and the mask editor's Auto, never as a generator.
+     */
+    val matte: Boolean = false,
+    /**
      * ⭐⭐ What this conversion takes per render — [ModelFeatures.LORA], `CONTROLNET`,
      * `IP_ADAPTER`, `INPAINT` — read from its `swap_features.json` at import
      * ([ModelFeatures.of]). Null = a built-in entry: its family's default.
@@ -2483,7 +2489,10 @@ object ModelCatalog {
         gpu: Boolean = false,
         /** ⚠ See [ModelSpec.flowShift]. */
         flowShift: String? = null,
+        /** ⚠ See [ModelSpec.matte]. */
+        matte: Boolean = false,
     ) = ModelSpec(
+        matte = matte,
         ownLora = ownLora,
         anima29 = anima29,
         flowShift = flowShift,
@@ -2507,6 +2516,10 @@ object ModelCatalog {
         cfg = cfg,
         files = files,
     )
+
+    /** ⭐ RMBG 3.0's id ([ModelSpec.matte]) and its GGUF's size, read off the file. */
+    const val RMBG3 = "rmbg3"
+    const val RMBG3_BYTES = 4_870_390_432L
 
     /** ⚠ The tier label a DiT build reports — it is a device gate, not an archive. */
     const val TIER_DIT = "_v79"
@@ -2978,6 +2991,26 @@ object ModelCatalog {
             prompt = "a red fox sitting in a snowy pine forest at dawn, soft light, photograph",
             files = listOf(
                 RemoteFile(HF + "AbrahamPJ/fibo2-dev-q4_0-gguf/resolve/main/fibo2_dev-q4_0.gguf", "dit.gguf", 4_870_390_432L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
+                RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-4B-Instruct-f16.gguf", "llm_vision.gguf", 836_180_256L),
+                RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),
+                RemoteFile(HF + "Qwen/Qwen3-VL-4B-Instruct/resolve/main/tokenizer.json", "tokenizer.json", 7_032_403L),
+            ),
+        ),
+        // ⭐⭐ RMBG 3.0 (Bria, non-commercial, GitHub #136): Fibo 2.0 Edit Turbo fine-tuned to render an alpha matte in
+        // 4 steps at CFG 1. Ours: Bria's `rmbg3_bf16.safetensors` in Edit Turbo's per-tensor types, the same 634 tensors
+        // (`../LocalDream/fibo/rmbg3/rmbg3_q4.py`), so the same launch; every other part is BORROWED from Edit Turbo.
+        // ⚠ The prompt is fixed ([ModelSpec.matte]): another one gives a coloured picture, not a matte.
+        dit(
+            RMBG3, "RMBG 3.0 (background remover)", Family.FIBO2, KREA2, steps = 4,
+            ownDitParts = true,
+            partsFrom = "fibo2_edit_turbo",
+            minRamBytes = Prefs.RAM_12GB_CLASS_BYTES,
+            minArch = DIT_GGML_MIN_ARCH,
+            prompt = Matte.INSTRUCTION,
+            matte = true,
+            files = listOf(
+                RemoteFile(HF + "AbrahamPJ/rmbg-3.0-q4_0-gguf/resolve/main/rmbg3-q4_0.gguf", "dit.gguf", RMBG3_BYTES),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen_Qwen3-VL-4B-Instruct-Q4_0.gguf", "llm.gguf", 2_375_774_112L),
                 RemoteFile(HF + "bartowski/Qwen_Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen_Qwen3-VL-4B-Instruct-f16.gguf", "llm_vision.gguf", 836_180_256L),
                 RemoteFile(HF + "zhiyuanasad/flux2_klein_adreno/resolve/main/vae.safetensors", "vae.safetensors", 336_213_556L),

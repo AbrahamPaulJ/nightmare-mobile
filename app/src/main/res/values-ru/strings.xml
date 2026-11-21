@@ -136,6 +136,7 @@
     <string name="battery_body">Диспетчер батареи этого телефона может останавливать приложение, пока оно не на экране: это оборвёт идущую генерацию или выгрузит загруженную модель. Разрешите работу без ограничений, чтобы этого не случалось.</string>
     <string name="battery_title">Генерация в фоне</string>
     <string name="cd_pick_by_name">Автосегментация</string>
+    <string name="cd_auto_subject">Маска на объект (RMBG 3.0)</string>
     <string name="cd_redo_stroke">Повторить</string>
     <string name="embeddings_body">Обученное понятие в виде файла, а не чекпойнта: .safetensors с Civitai или похожего сайта. Назовите его в промпте, чтобы использовать.</string>
     <string name="embeddings_title">Эмбеддинги</string>
@@ -147,6 +148,8 @@
     <string name="mask_pick_hint">Выберите, что перерисовать. Коснитесь метки ещё раз, чтобы снять её. Поток запомнит выбор и применит его к каждому новому снимку.</string>
     <string name="mask_pick_show">Включить автомаску</string>
     <string name="mask_pick_working">Читаем картинку…</string>
+    <string name="mask_auto_working">Ищу объект с помощью RMBG 3.0. Около минуты</string>
+    <string name="mask_auto_download">Скачайте %1$s в «Моделях», чтобы выделить объект</string>
     <string name="mb_of_total">%1$d из %2$d МБ</string>
     <string name="parser_loading">Читаем картинку: первый выбор займёт мгновение…</string>
     <string name="video">Видео</string>
@@ -811,6 +814,8 @@
     <string name="flow_swap_i2i_about">Фотография переосмысливается моделью Swap с теми же тремя возможностями. ControlNet читает саму фотографию, если не дать ему другое изображение.</string>
     <string name="flow_flux_edit_name">Редактирование изображения</string>
     <string name="flow_flux_edit_about">FLUX.2 Klein, FLUX.3 Klein, Qwen Image 2.1 или Fibo 2.0 Edit на 8 Gen 3 или новее (альфа на 8 Gen 3). Фотография и промпт: всё изображение перерисовывается по нему, а не слегка изменяется. Подключите второе изображение к порту reference и назовите их image 1 и image 2 в промпте.</string>
+    <string name="flow_remove_bg_name">Удалить фон</string>
+    <string name="flow_remove_bg_about">Фотография с прозрачным фоном, сохраняется как PNG. Волосы и мягкие края остаются мягкими. RMBG 3.0 от Bria, на 8 Gen 3 или новее.</string>
     <string name="flow_t2v_name">Текст в видео</string>
     <string name="flow_t2v_about">Описание в ролик. По умолчанию Wan 2.2 Turbo (минуты, намного лучше); переключите узел видео на Neodragon для 2 с примерно за 30 с.</string>
     <string name="flow_i2v_name">Изображение в видео</string>
@@ -1028,6 +1033,9 @@
     <string name="run_download_auto_segmenter">узел «%1$s»: эта маска выбрана по названию: скачайте %2$s в «Модели → Инструменты»</string>
     <string name="run_finding_tapped_objects">ищу объекты, которых вы коснулись</string>
     <string name="run_finding_picked_objects">ищу то, что вы выбрали</string>
+    <string name="run_matte_needs_photo">узел «%1$s»: подключите фотографию, чтобы удалить её фон</string>
+    <string name="run_matte_done">фон удалён, %1$s</string>
+    <string name="run_subject_not_found">маска объекта сделана на другой картинке. Откройте маску и найдите объект снова</string>
     <string name="run_nothing_found_tapped">там, где вы коснулись, ничего не найдено: закрасьте область и запустите снова</string>
     <string name="run_named_objects_not_found">на этой картинке не найдено: %1$s. Закрасьте область или выберите другое в редакторе маски</string>
     <string name="word_or">" или "</string>

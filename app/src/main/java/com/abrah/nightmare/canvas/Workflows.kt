@@ -72,7 +72,8 @@ private fun ctxKeyParams(
     // their whole graph back. ⚠⚠ When the family does NOT match, that size
     // belongs to another family entirely (a DiT 1024 on an SD 1.5 node), so
     // the chosen model's own native size is the only sane answer.
-    if (SelectedModel.spec.family == family) {
+    // ⚠ A background remover is never an ordinary flow's model ([ModelSpec.matte]).
+    if (SelectedModel.spec.family == family && !SelectedModel.spec.matte) {
         val res = SelectedModel.res
         return mapOf(
             "model" to SelectedModel.id,
@@ -81,7 +82,7 @@ private fun ctxKeyParams(
         )
     }
 
-    val ofFamily = ModelCatalog.all.filter { it.family == family }
+    val ofFamily = ModelCatalog.all.filter { it.family == family && !it.matte }
     val installed = ofFamily.filter { it.id in ModelCatalog.installedIds }
     // ⚠ `installed` is empty before `refreshInstalled` has run, and also when
     // the user genuinely has none of this family; both degrade to the
@@ -445,6 +446,8 @@ data class SwapFlow(val recipe: Recipe, val takesPicture: Boolean, val current: 
 
 fun Recipe.runsOn(spec: com.abrah.nightmare.ModelSpec): Boolean {
     if (!usesCheckpoint || !offeredPerModel) return false
+    // ⭐ A background remover runs Remove background and nothing else; no picture model runs that one ([ModelSpec.matte]).
+    if (spec.matte != (id == REMOVE_BG)) return false
     if (!servesFamily(spec.family)) return false
     val wantsMask = build().graph.nodes.any {
         (com.abrah.nightmare.NODE_TYPES[it.type] as? com.abrah.nightmare.SdSampler)?.inpaint == true
@@ -571,6 +574,19 @@ val RECIPES: List<Recipe> = listOf(
         labelRes = R.string.flow_flux_edit_name,
         aboutRes = R.string.flow_flux_edit_about,
     ),
+    // ⭐ Remove background (RMBG 3.0, GitHub #136): Fibo 2.0 Edit Turbo's cost (4 steps of an 8B on the Fibo engine),
+    // so it sits with the edit it is made from. Its model is fixed; Use on RMBG 3.0 offers only this.
+    Recipe(
+        REMOVE_BG, "Remove background",
+        "A photo with its background made transparent, saved as a PNG. Hair and soft edges stay soft. " +
+            "RMBG 3.0 by Bria, on an 8 Gen 3 or newer.",
+        ::removeBgWorkflow,
+        families = setOf(com.abrah.nightmare.Family.FIBO2),
+        minArch = com.abrah.nightmare.ModelCatalog.DIT_GGML_MIN_ARCH,
+        section = EDIT,
+        labelRes = R.string.flow_remove_bg_name,
+        aboutRes = R.string.flow_remove_bg_about,
+    ),
     // ⭐⭐ Text to video and Image to video: ONE flow each for Wan 2.2 and Neodragon (the user's call,
     // 2026-10-15: "merge them, default to Wan 2.2 5B"), the model a choice on the video node.
     Recipe(
@@ -645,6 +661,7 @@ const val I2V = "i2v"
 const val T2V14 = "t2v14"
 const val H3REF = "h3_ref"
 const val MOTION = "motion"
+const val REMOVE_BG = "remove_bg"
 
 /**
  * ⭐⭐⭐ Inpainting — the SAME four nodes as image to image, with a mask painted
@@ -816,6 +833,31 @@ fun fluxEditWorkflow(): Workflow {
             )
         ),
         flowLayout("prompt", "image", id, "output"),
+    )
+}
+
+/**
+ * ⭐ [REMOVE_BG]: a picture through the edit sampler on RMBG 3.0, whose matte becomes its alpha ([com.abrah.nightmare.Matte]).
+ * No prompt node: the model takes only Bria's fixed instruction ([com.abrah.nightmare.ModelSpec.matte]).
+ */
+fun removeBgWorkflow(): Workflow {
+    val spec = ModelCatalog.byId(ModelCatalog.RMBG3)!!
+    val res = spec.bornAt
+    return Workflow(
+        Graph(
+            listOf(
+                Node("image", "core.image", params = mapOf("uri" to "")),
+                Node(
+                    "remove", samplerType(family = spec.family),
+                    params = mapOf(
+                        "model" to spec.id, "width" to res.width.toString(), "height" to res.height.toString(), "seed" to "0",
+                    ),
+                    inputs = sources("image" to "image"),
+                ),
+                Node("output", "core.output", inputs = sources("media" to "remove")),
+            )
+        ),
+        flowLayout("image", "remove", "output"),
     )
 }
 

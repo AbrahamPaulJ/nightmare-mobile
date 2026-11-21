@@ -175,7 +175,10 @@
     <string name="segmenter_loading">Loading the segmenter. The first tap on a picture takes a moment…</string>
     <string name="parser_loading">Reading the picture. The first pick takes a moment…</string>
     <string name="cd_pick_by_name">Auto segment</string>
+    <string name="cd_auto_subject">Mask the subject (RMBG 3.0)</string>
     <string name="mask_pick_working">Reading the picture…</string>
+    <string name="mask_auto_working">Finding the subject with RMBG 3.0. About a minute</string>
+    <string name="mask_auto_download">Download %1$s in Models to mask the subject</string>
     <string name="mask_pick_hint">Pick what to repaint. Tap a chip again to let it go. This flow remembers your choice and applies it to every new photo.</string>
     <string name="mask_pick_show">Enable auto mask</string>
     <string name="mask_layer_image">Layer 1 · image</string>
@@ -823,6 +826,8 @@
     <string name="flow_swap_i2i_about">A photo re-imagined by a Swap model, with the same three. ControlNet reads the photo itself unless you give it another picture.</string>
     <string name="flow_flux_edit_name">Image edit</string>
     <string name="flow_flux_edit_about">FLUX.2 Klein, FLUX.3 Klein, Qwen Image 2.1 or Fibo 2.0 Edit, on an 8 Gen 3 or newer (alpha on 8 Gen 3). A photo and a prompt: the whole picture is re-rendered to follow it, rather than nudged. Wire a second picture into the reference port and name them as image 1 and image 2 in the prompt.</string>
+    <string name="flow_remove_bg_name">Remove background</string>
+    <string name="flow_remove_bg_about">A photo with its background made transparent, saved as a PNG. Hair and soft edges stay soft. RMBG 3.0 by Bria, on an 8 Gen 3 or newer.</string>
     <string name="flow_t2v_name">Text to video</string>
     <string name="flow_t2v_about">A prompt into a clip. Wan 2.2 Turbo by default (minutes, much better); switch the video node to Neodragon for 2 s in about 30 s.</string>
     <string name="flow_i2v_name">Image to video</string>
@@ -1036,6 +1041,9 @@
     <string name="run_download_auto_segmenter">node \"%1$s\": this mask was picked by name. Download %2$s in Models, Tools</string>
     <string name="run_finding_tapped_objects">finding the objects you tapped</string>
     <string name="run_finding_picked_objects">finding what you picked</string>
+    <string name="run_matte_needs_photo">node \"%1$s\": wire in a photo to remove its background</string>
+    <string name="run_matte_done">background removed, %1$s</string>
+    <string name="run_subject_not_found">the subject mask was made on another picture. Open the mask and find the subject again</string>
     <string name="run_nothing_found_tapped">nothing found where you tapped. Paint an area, then Run again</string>
     <string name="run_named_objects_not_found">no %1$s found in this picture. Paint an area, or pick something else in the mask editor</string>
     <string name="word_or">" or "</string>

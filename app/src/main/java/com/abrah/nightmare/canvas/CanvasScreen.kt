@@ -340,6 +340,8 @@ fun CanvasScreen(
     onCancelSegmenter: (() -> Unit)? = null,
     /** ⭐⭐ …and the PARSER's half of the same, for Pick by name. */
     onPickMask: ((node: String, target: String, done: (String?) -> Unit) -> Unit)? = null,
+    /** ⭐ The mask editor's Auto (RMBG 3.0): find the photo's subject; done(null) when the mask can take it. */
+    onAutoSubject: ((node: String, done: (String?) -> Unit) -> Unit)? = null,
     /** ⭐⭐ Translate a prompt into English — [NodeInspectorBody]'s `onTranslate`. */
     onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
     /**
@@ -699,6 +701,7 @@ fun CanvasScreen(
         segmenterRow = segmenterRow,
         onCancelSegmenter = onCancelSegmenter,
         onPickMask = onPickMask,
+        onAutoSubject = onAutoSubject,
         onTranslate = onTranslate,
         onDescribe = onDescribe,
         parserInstalled = parserInstalled,

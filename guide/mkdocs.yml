@@ -75,6 +75,7 @@ nav:
       - Edit a face: flows/face-edit.md
       - "Advanced: LoRA, ControlNet, IP-Adapter": flows/advanced.md
       - Image edit: flows/image-edit.md
+      - Remove background: flows/remove-background.md
       - Video: flows/video.md
       - Batching: flows/batch.md
   - Models:

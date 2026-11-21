@@ -679,6 +679,7 @@ fun HarnessScreen(
             onEditMask = vm::editMask,
             onTapMask = vm::tapMask,
             onPickMask = vm::pickMask,
+            onAutoSubject = vm::autoSubject,
             onTranslate = vm::translatePrompt,
             onDescribe = vm::describePicture,
             onCancelRun = vm::requestCancelRun,
