@@ -36,7 +36,7 @@ always get back to exactly how it was made.
 | **Share** | Shares the picture with another app, with the same info, and a thin credit strip under it (Settings, Results, Sharing: on by default, your name optional; its Info can go with it as the message text) |
 | **Send to a flow** | Offers the flows that take a photo: Image to image, Inpaint, Image edit, Upscale, Image to video, and opens the one you pick with this picture in it. A built-in flow also takes the picture's prompt, negative and LoRAs (the LoRAs only when the flow's model is the same kind as the one that made it) |
 | **Upscale** | Enlarges it with an upscaler; the bigger copy is kept as a new item. The same window offers **UltraFix**: see below |
-| ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow; on a DiT picture, **Diagnose**: see below |
+| ⓘ **What made this** | The prompt, model, seed and settings, and a way to use them on the open flow; **Run log**, the report of the run that made it, to share when a result looks wrong or took too long (kept 30 days); on a DiT picture, **Diagnose**: see below |
 | **Open flow** / share the flow | Reopens the flow that made it on the canvas, or shares that flow as a file |
 
 A clip plays on its card; tap it to play it full screen. A [chain of clips](../flows/video.md#longer-clips-one-film)

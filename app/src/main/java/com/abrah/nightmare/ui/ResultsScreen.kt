@@ -172,6 +172,8 @@ fun ResultsScreen(
     transferFor: (Result) -> InfoTransfer? = { null },
     /** ⭐ Diagnose from its Info ([ResultInfoDialog]): null where it cannot be. */
     diagnoseFor: (Result) -> (() -> Unit)? = { null },
+    /** ⭐ The report of the run that made it, kept with the result ([com.abrah.nightmare.canvas.ResultsStore.keepLog]). */
+    logFor: (Result) -> String? = { null },
     /** ⭐ Upscale with an installed upscaler; the enlarged picture becomes a new item. */
     onUpscale: (Result, String, Int) -> Unit = { _, _, _ -> },
     /** ⭐ UltraFix ([com.abrah.nightmare.UltraFix]) from the same chooser; null hides it. */
@@ -675,7 +677,7 @@ fun ResultsScreen(
         }
     }
 
-    info?.let { r -> ResultInfoDialog(detailsFor(r), onClose = { info = null }, transfer = transferFor(r), onDiagnose = diagnoseFor(r)) }
+    info?.let { r -> ResultInfoDialog(detailsFor(r), onClose = { info = null }, transfer = transferFor(r), onDiagnose = diagnoseFor(r), log = logFor(r)) }
 
     var ultrafixing by remember { mutableStateOf<Result?>(null) }
     ultrafixing?.let { r -> UltraFixFor(r, onUltraFix) { ultrafixing = null } }
@@ -805,6 +807,8 @@ fun ResultViewer(
     transferFor: (Result) -> InfoTransfer? = { null },
     /** ⭐ Diagnose from its Info ([ResultInfoDialog]): null where it cannot be. */
     diagnoseFor: (Result) -> (() -> Unit)? = { null },
+    /** ⭐ The report of the run that made it, kept with the result ([com.abrah.nightmare.canvas.ResultsStore.keepLog]). */
+    logFor: (Result) -> String? = { null },
     onDelete: (Result) -> Unit,
     /** ⭐ Write this picture into the phone's gallery. */
     onSave: (Result) -> Unit = {},
@@ -1207,7 +1211,7 @@ fun ResultViewer(
 
         // ⭐ The SAME info dialog the Results row opens — one function, so the two
         // cannot drift (`docs/ARCHITECTURE.md` §5.6).
-        if (showInfo) ResultInfoDialog(detailsFor(current), onClose = { showInfo = false }, transfer = transferFor(current), onDiagnose = diagnoseFor(current))
+        if (showInfo) ResultInfoDialog(detailsFor(current), onClose = { showInfo = false }, transfer = transferFor(current), onDiagnose = diagnoseFor(current), log = logFor(current))
 
         if (confirmingDelete) {
             // ⚠ The SAME body as the card's confirm — one constant, not two copies.
@@ -1421,10 +1425,17 @@ fun ResultInfoDialog(
      * installed. Null offers nothing. Asks first: it is many renders.
      */
     onDiagnose: (() -> Unit)? = null,
+    /** ⭐ The run's own report, kept with the result: shown and shared as the run log's share does. Null offers nothing. */
+    log: String? = null,
     onClose: () -> Unit,
 ) {
     val clip = androidx.compose.ui.platform.LocalClipboardManager.current
     var askingDiagnose by remember { mutableStateOf(false) }
+    var showingLog by remember { mutableStateOf(false) }
+    if (showingLog && log != null) {
+        ErrorDetails(log, onDismiss = { showingLog = false })
+        return
+    }
     if (askingDiagnose && onDiagnose != null) {
         AlertDialog(
             onDismissRequest = { askingDiagnose = false },
@@ -1524,6 +1535,9 @@ fun ResultInfoDialog(
                 }
                 if (selected.isEmpty() && onDiagnose != null) {
                     StudioButton(onClick = { askingDiagnose = true }, modifier = wide) { Text(stringResource(R.string.diagnose)) }
+                }
+                if (selected.isEmpty() && log != null) {
+                    StudioOutlinedButton(onClick = { showingLog = true }, modifier = wide) { Text(stringResource(R.string.results_run_log)) }
                 }
                 StudioOutlinedButton(onClick = { clip.setText(androidx.compose.ui.text.AnnotatedString(all)) }, modifier = wide) {
                     Icon(CopyIcon, contentDescription = null, modifier = Modifier.size(16.dp))

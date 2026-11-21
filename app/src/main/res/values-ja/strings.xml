@@ -1547,4 +1547,5 @@ Nightmare は、このモデルを使用する箇所に \"Powered by MiniMax-H3-
 <string name="chip_temps">チップの温度を表示</string>
 <string name="chip_temps_hint">RAM の行には、バッテリーの代わりに CPU、GPU、NPU（それぞれ最も熱いセンサー）が表示されます。発熱の警告は引き続きバッテリーに従います。</string>
 <string name="dit_area_too_big">%1$dx%2$d は、このモデルが端末でレンダリングできる大きさを超えています。形は自由ですが、合計 %3$dx%4$d ピクセル以内にしてください：3840x2160（4K）なら収まります。</string>
+    <string name="results_run_log">実行ログ</string>
 </resources>

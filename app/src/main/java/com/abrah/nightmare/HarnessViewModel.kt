@@ -7410,6 +7410,12 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                     batchId, batchLabel, video = clip, favourite = favourite, auto = auto, times = times,
                 )
             }
+            // ⭐ The run's report beside an autosaved result ([ResultsStore.keepLog]): only the run that made it, so only
+            // while it is [current] and kept at the run's end (a star tapped later may find another run's log).
+            if (auto && current) r.getOrNull()?.let { kept ->
+                runCatching { results.keepLog(kept.id, errorReport(text(R.string.run_report_title))) }
+                    .onFailure { android.util.Log.w("Harness", "could not keep the run log: ${it.message}") }
+            }
             withContext(kotlinx.coroutines.Dispatchers.Main) {
                 r.fold(
                     onSuccess = {
@@ -10081,6 +10087,9 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         return ErrorReport.build(getApplication(), message, runLines + appLines, prompts) +
             (lastDiagnosis?.let { "\n\n$it" } ?: "")
     }
+
+    /** ⭐ The report of the run that made [r], kept with it ([ResultsStore.keepLog]); null when there is none. */
+    fun runLogOf(r: com.abrah.nightmare.canvas.Result): String? = results.runLog(r.id)
 
     /** ⭐ Diagnose's dialog ([BlankDiagnosis]): the leg running, or [report] once it is done. */
     data class Diagnosis(val step: Int, val total: Int, val what: String, val report: String? = null)

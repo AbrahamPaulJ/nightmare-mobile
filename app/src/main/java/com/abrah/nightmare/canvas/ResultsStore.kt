@@ -124,6 +124,10 @@ class ResultsStore(private val dir: File) {
     private companion object {
         /** ⚠ Process-wide, not per instance: two stores may share one directory. See [keep]. */
         val KEEP_LOCK = Any()
+
+        /** ⭐ [keepLog]'s limits: about 2.4 MB at most. */
+        const val LOG_KEEP = 200
+        const val LOG_DAYS = 30
     }
 
     private fun png(id: String) = File(dir, "$id.png")
@@ -133,6 +137,27 @@ class ResultsStore(private val dir: File) {
     private fun mp4(id: String) = File(dir, "$id.mp4")
 
     fun imageFile(id: String): File = png(id)
+
+    /** ⚠ `.log.txt`, never `.json`: [all] reads every `*.json` as a result. */
+    private fun log(id: String) = File(dir, "$id.log.txt")
+
+    /** ⭐ The run's report kept with [id] ([keepLog]), or null: a result kept by hand, or one whose log was forgotten. */
+    fun runLog(id: String): String? = log(id).takeIf { it.isFile }?.let { runCatching { it.readText() }.getOrNull() }
+
+    /**
+     * ⭐ The report of the run that made [id] (the run log's own share, [com.abrah.nightmare.ErrorReport]), kept beside it
+     * so a result that looks wrong or took too long can still send its log afterwards (a tester's 26-min Fibo render
+     * had none; the user, 2026-11-22). ⚠ Forgotten on their own: older than [LOG_DAYS], or past the newest [LOG_KEEP]
+     * (~12 KB each), so they never grow into what the results cost.
+     */
+    fun keepLog(id: String, text: String, now: Long = System.currentTimeMillis()) {
+        if (!png(id).isFile) return
+        log(id).writeText(text)
+        val logs = dir.listFiles { f -> f.name.endsWith(".log.txt") }.orEmpty().sortedByDescending { it.lastModified() }
+        logs.forEachIndexed { i, f ->
+            if (i >= LOG_KEEP || now - f.lastModified() > LOG_DAYS * 86_400_000L) f.delete()
+        }
+    }
 
     /**
      * ⭐ The kept CLIP, or null when this result is an ordinary picture.
@@ -483,6 +508,7 @@ class ResultsStore(private val dir: File) {
         // ⚠ The clip too, or un-starring a video leaves the biggest half of it
         // on disk with nothing left pointing at it.
         mp4(id).delete()
+        log(id).delete()
     }
 
     /** Bytes on disk, for a line that tells the user what this is costing. */

@@ -55,6 +55,26 @@ class ResultsStoreTest {
         )
     }
 
+    /** ⭐ A run's log is kept beside its result, goes with it on delete, and forgets itself when old (the user, 2026-11-22). */
+    @Test
+    fun aRunLogIsKeptWithItsResultAndForgottenWhenOld() {
+        val dir = tmp.newFolder()
+        val s = ResultsStore(dir)
+        val r = s.keep(bitmap(), "img_log", defaultWorkflow(), NODE_TYPES, "1", "Klein", "a cat")
+        assertNull(s.runLog(r.id))
+        s.keepLog(r.id, "Nightmare run report")
+        assertEquals("Nightmare run report", s.runLog(r.id))
+        assertEquals("the log is not read as a result", 1, s.all().size)
+        // Old: the next keep forgets it.
+        java.io.File(dir, "${r.id}.log.txt").setLastModified(System.currentTimeMillis() - 31L * 86_400_000L)
+        val r2 = s.keep(bitmap(), "img_log2", defaultWorkflow(), NODE_TYPES, "2", "Klein", "a dog")
+        s.keepLog(r2.id, "second")
+        assertNull("over 30 days", s.runLog(r.id))
+        assertEquals("second", s.runLog(r2.id))
+        s.delete(r2.id)
+        assertTrue("goes with its result", dir.listFiles()!!.none { it.name.endsWith(".log.txt") })
+    }
+
     /**
      * ⭐⭐ **A starred CLIP keeps the MP4**, not just its poster frame.
      *
