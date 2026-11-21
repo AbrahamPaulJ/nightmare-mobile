@@ -28,6 +28,7 @@ open class SettingsScreenshotTest {
     private fun shoot(
         name: String, page: Int, downloadFolder: Boolean = false, black: Boolean = false,
         accent: Prefs.Accent = Prefs.Accent.VIOLET, dark: Boolean = true, lowRam: Prefs.LowRam? = null,
+        loras: List<com.abrah.nightmare.ui.EmbeddingRow> = emptyList(),
     ) =
         captureRoboImage(filePath = goldenPath(this, name)) {
             NightmareTheme(darkTheme = dark, black = black, accent = accent) {
@@ -38,8 +39,9 @@ open class SettingsScreenshotTest {
                     theme = if (black) Prefs.Theme.BLACK else Prefs.Theme.SYSTEM,
                     onTheme = {},
                     accent = accent,
-                    loras = emptyList(),
+                    loras = loras,
                     onImportLora = {},
+                    onDeleteLora = if (loras.isEmpty()) null else { _ -> },
                     embeddings = emptyList(),
                     onImportEmbedding = {},
                     translateRows = rows,
@@ -72,6 +74,21 @@ open class SettingsScreenshotTest {
     @Test fun prompts() = shoot("settings-prompts", 1)
     @Test fun models() = shoot("settings-models", 2, downloadFolder = true)
     @Test fun advanced() = shoot("settings-advanced", 3)
+    /** ⭐ GitHub #137: Settings' LoRA list in the picker's folders: one closed folder of two, then the loose one. */
+    @Config(qualifiers = "w411dp-h1200dp-xxhdpi")
+    @Test fun lorasInFolders() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        LoraLibrary.setFolder(ctx, "ink_style.safetensors", "Style")
+        LoraLibrary.setFolder(ctx, "watercolour.safetensors", "Style")
+        shoot(
+            "settings-loras-folders", 2,
+            loras = listOf(
+                com.abrah.nightmare.ui.EmbeddingRow("detail_tweaker.safetensors", 151L shl 20),
+                com.abrah.nightmare.ui.EmbeddingRow("ink_style.safetensors", 38L shl 20),
+                com.abrah.nightmare.ui.EmbeddingRow("watercolour.safetensors", 72L shl 20),
+            ),
+        )
+    }
     /** ⭐ Performance, with "Sound when a run ends" on (GitHub #79): its two sound rows, Default each. ⚠ Tall: it is the third card. */
     @Config(qualifiers = "w411dp-h1600dp-xxhdpi")
     @Test fun performance() = shoot(

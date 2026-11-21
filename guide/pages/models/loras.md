@@ -101,11 +101,12 @@ order they are applied.
 
 ### Folders
 
-With dozens of LoRAs, put them in folders: open a LoRA's **⋮** and under **Folder** pick one of
+With dozens of LoRAs, put them in folders: open a LoRA's **⋮** (in a node's LoRA list, or in
+**Settings → Models**, under LoRAs) and under **Folder** pick one of
 that model's folders, or **New folder** and type a name (`Style`, `Anatomy`, `Effects`). Folders
 show first in the list, closed, each with how many LoRAs it holds; tap one to open it. **None**
 takes a LoRA out again, and a folder with nothing in it disappears. The files stay where they are
-on the phone. While you search, every match shows, folders or not.
+on the phone. Both lists show the same folders. While you search, every match shows, folders or not.
 
 Wan's **Motion transfer** takes no LoRAs: it has no LoRA list, and `<lora:…>` tags in its prompt
 are skipped.

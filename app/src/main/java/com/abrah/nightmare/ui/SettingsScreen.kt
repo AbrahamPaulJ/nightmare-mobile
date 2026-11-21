@@ -596,34 +596,11 @@ fun SettingsScreen(
                         body = stringResource(R.string.loras_body),
                         onImport = onImportLora,
                     )
-                    for (row in loras.orEmpty()) {
-                        Card(
-                            Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            ),
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(row.name, style = MaterialTheme.typography.titleSmall)
-                                    Text(
-                                        stringResource(R.string.installed_mb, row.bytes shr 20),
-                                        style = NoteTextStyle,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                if (onDeleteLora != null) {
-                                    StudioOutlinedButton(onClick = { deletingLora = row.name }) {
-                                        Text(stringResource(R.string.delete))
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // ⭐ GitHub #137: in the folders the node's picker files them in, with the same ⋮.
+                    com.abrah.nightmare.canvas.LoraLibraryList(
+                        rows = loras.orEmpty().map { it.name to it.bytes },
+                        onDelete = onDeleteLora?.let { { name: String -> deletingLora = name } },
+                    )
                 }
             }
         }

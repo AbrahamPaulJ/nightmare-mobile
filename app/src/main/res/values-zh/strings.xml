@@ -139,7 +139,7 @@
     <string name="embeddings_title">嵌入 (Embeddings)</string>
     <string name="import_upscaler_body">已转换的放大模型权重文件 (.bin)。不做架构检查，要么能加载，要么不能。</string>
     <string name="import_upscaler_title">导入放大模型</string>
-    <string name="loras_body">以小型适配器文件保存的风格或角色，叠加在检查点之上。仅限 FLUX.2 和 Z‑Image，在采样器节点的 LoRAs 参数中选择。</string>
+    <string name="loras_body">以小型适配器文件保存的风格或角色，叠加在检查点之上。可用 ⋮ 放入文件夹。在采样器节点的 LoRAs 参数中选择。</string>
     <string name="loras_title">LoRA</string>
     <string name="lora_experimental">在此模型上使用 LoRA 可能会让生成明显变慢。</string>
     <string name="mask_pick_hint">选择要重绘的内容。再点一次标签即可取消。此工作流会记住你的选择，并应用到每张新照片。</string>

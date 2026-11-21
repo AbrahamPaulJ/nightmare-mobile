@@ -144,7 +144,7 @@
 <string name="segmenter_about">インペイントのマスク内でオブジェクトをタップして選択します。マスクエディタで “Enable tap to select” をオンにしてください。</string>
 <string name="loras_title">LoRA</string>
 <string name="lora_experimental">このモデルに LoRA を使うと、描画が目に見えて遅くなることがあります。</string>
-<string name="loras_body">チェックポイントの上に適用する、小さなアダプタファイル形式のスタイルやキャラクターです。FLUX.2 と Z-Image のみ対応しています。サンプラーノードの LoRAs ノブで選択します。</string>
+<string name="loras_body">チェックポイントの上に適用する、小さなアダプタファイル形式のスタイルやキャラクターです。⋮ からフォルダに分けられます。サンプラーノードの LoRAs ノブで選択します。</string>
 <string name="embeddings_title">埋め込み（Embeddings）</string>
 <string name="embeddings_body">チェックポイントではなく、学習済みコンセプトのファイルです。Civitai などから入手した .safetensors を使います。プロンプトで名前を指定すると使用できます。</string>
 <!-- Download source (mirror). Added 2026-09-20: huggingface.co is

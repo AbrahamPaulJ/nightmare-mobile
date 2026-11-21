@@ -434,27 +434,36 @@ fun LoraPickerContent(
         for (name in chosenRows) loraRow(name)
         for ((folder, names) in groups) {
             val isOpen = folder in openFolders
-            Row(
-                Modifier.fillMaxWidth()
-                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                    .clickable { openFolders = if (isOpen) openFolders - folder else openFolders + folder }
-                    .padding(horizontal = 4.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    if (isOpen) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = stringResource(R.string.lora_cd_folder, folder),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    stringResource(R.string.lora_folder_count, folder, names.size),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(start = 6.dp),
-                )
-            }
+            LoraFolderHeader(folder, names.size, isOpen) { openFolders = if (isOpen) openFolders - folder else openFolders + folder }
             if (isOpen) for (name in names) loraRow(name)
         }
         for (name in loose) loraRow(name)
+    }
+}
+
+/**
+ * ⭐ A LoRA folder's row: an arrow, its name and how many it holds; a tap opens or closes it (GitHub #36).
+ * ⚠ The ONE folder header: the node's picker and Settings, LoRAs both call it (GitHub #137).
+ */
+@Composable
+internal fun LoraFolderHeader(folder: String, count: Int, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClickLabel = stringResource(R.string.lora_cd_folder, folder), onClick = onToggle)
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (open) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            stringResource(R.string.lora_folder_count, folder, count),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(start = 6.dp),
+        )
     }
 }
 

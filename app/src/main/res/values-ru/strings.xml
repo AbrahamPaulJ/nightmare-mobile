@@ -142,7 +142,7 @@
     <string name="embeddings_title">Эмбеддинги</string>
     <string name="import_upscaler_body">Сконвертированный файл весов апскейлера (.bin). Проверки архитектуры нет: он либо загрузится, либо нет.</string>
     <string name="import_upscaler_title">Импорт апскейлера</string>
-    <string name="loras_body">Стиль или персонаж в виде небольшого файла-адаптера поверх чекпойнта. Только FLUX.2 и Z‑Image: выберите его в параметре LoRAs узла сэмплера.</string>
+    <string name="loras_body">Стиль или персонаж в виде небольшого файла-адаптера поверх чекпойнта. Раскладывайте их по папкам через ⋮. Выберите его в параметре LoRAs узла сэмплера.</string>
     <string name="loras_title">LoRA</string>
     <string name="lora_experimental">LoRA на этой модели может заметно замедлить генерацию.</string>
     <string name="mask_pick_hint">Выберите, что перерисовать. Коснитесь метки ещё раз, чтобы снять её. Поток запомнит выбор и применит его к каждому новому снимку.</string>
