@@ -1392,6 +1392,8 @@
     <!-- review fixes (2026-10-22): canvas, inspector, ui -->
     <string name="inspector_sweep_count">How many: %1$d</string>
     <string name="inspector_sweep_seeds">%1$d runs, each with a new random seed</string>
+    <string name="inspector_sweep_prompts_note">One prompt per line, up to %1$d. Each picture takes the next one; everything else on the node stays as it is.</string>
+    <string name="inspector_sweep_prompts">%1$d runs, one for each prompt</string>
     <string name="output_auto_upscale_on">this output already enlarges every render. Untick auto upscale to choose</string>
     <string name="inspector_sweep_this">sweep this parameter</string>
     <string name="inspector_sweeping">sweeping %1$s</string>

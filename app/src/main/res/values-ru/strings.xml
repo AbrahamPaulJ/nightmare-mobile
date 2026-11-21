@@ -1388,6 +1388,8 @@
     <!-- review fixes (2026-10-22): canvas, inspector, ui -->
     <string name="inspector_sweep_count">Сколько: %1$d</string>
     <string name="inspector_sweep_seeds">%1$d запусков, у каждого новый случайный сид</string>
+    <string name="inspector_sweep_prompts_note">Один промпт на строку, до %1$d. Каждая картинка берёт следующий; остальное на узле не меняется.</string>
+    <string name="inspector_sweep_prompts">%1$d запусков, по одному на каждый промпт</string>
     <string name="output_auto_upscale_on">этот выход уже увеличивает каждый результат. Снимите автоувеличение, чтобы выбрать</string>
     <string name="inspector_sweep_this">перебирать этот параметр</string>
     <string name="inspector_sweeping">перебор: %1$s</string>

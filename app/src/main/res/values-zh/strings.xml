@@ -1361,6 +1361,8 @@
     <!-- review fixes (2026-10-22): canvas, inspector, ui -->
     <string name="inspector_sweep_count">数量：%1$d</string>
     <string name="inspector_sweep_seeds">%1$d 次运行，每次使用新的随机种子</string>
+    <string name="inspector_sweep_prompts_note">每行一个提示词，最多 %1$d 个。每张图片依次使用下一个；节点上的其他设置不变。</string>
+    <string name="inspector_sweep_prompts">%1$d 次运行，每个提示词一次</string>
     <string name="output_auto_upscale_on">此输出已放大每次渲染。取消勾选自动放大后才能选择</string>
     <string name="inspector_sweep_this">遍历此参数</string>
     <string name="inspector_sweeping">正在遍历 %1$s</string>

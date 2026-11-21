@@ -53,7 +53,11 @@ object BatchParams {
         IMAGE_SAMPLER_TYPES.associateWith { listOf("seed", "steps", "cfg", "denoise", "scheduler") } +
             // ⭐ The video nodes' seed (GitHub #29: "loop a workflow while I go do something else" had no
             // answer for video, the user's pick 2026-10-15). Seed only: a clip's other knobs are its shape.
-            (com.abrah.nightmare.WAN_TYPES + "nd.sample").associateWith { listOf("seed") }
+            (com.abrah.nightmare.WAN_TYPES + "nd.sample").associateWith { listOf("seed") } +
+            // ⭐ GitHub #137 (the user's pick 2026-11-21, "one per line"): the prompt node's prompt, a LIST of whole
+            // prompts ([isList]), so each picture of a batch takes its own. Not a sampler knob: [canSweep] lets the
+            // graph's last prompt node arm it.
+            mapOf(LoraNotes.PROMPT_TYPE to listOf(PROMPT))
 
     /**
      * ⭐⭐ **How a knob is swept, per knob.** This is what makes the popup
@@ -136,7 +140,27 @@ object BatchParams {
      * ⚠ Three shapes, not two: a numeric RANGE (a from/to/step slider), an
      * option SET (`scheduler`, a multi-select) and a COUNT (`seed`).
      */
-    fun isRange(param: String): Boolean = param != "scheduler"
+    fun isRange(param: String): Boolean = param != "scheduler" && !isList(param)
+
+    const val PROMPT = "prompt"
+
+    /**
+     * ⭐ The fourth shape (#137): whole prompts, ONE PER LINE. ⚠ Lines, not commas: a prompt is a comma list itself.
+     */
+    fun isList(param: String): Boolean = param == PROMPT
+
+    /** ⚠ How far a listed prompt is shown in a one-line readout (the run bar, an armed row, a card's label). */
+    fun shown(param: String, values: List<String>): List<String> =
+        if (!isList(param)) values
+        else values.mapIndexed { i, v -> "${i + 1}. " + if (v.length > PROMPT_BRIEF) v.take(PROMPT_BRIEF).trimEnd() + "…" else v }
+
+    /** ⭐ [shown], joined for one readout: a line each for prompts (a prompt has commas of its own), else commas. */
+    fun joined(param: String, values: List<String>): String =
+        shown(param, values).joinToString(if (isList(param)) "\n" else ", ")
+
+    /** A non-range spec's values: lines for a [isList] knob, else a comma list. */
+    private fun split(param: String, spec: String): List<String> =
+        (if (isList(param)) spec.lines() else spec.split(',')).map { it.trim() }.filter { it.isNotEmpty() }
 
     fun keyFor(param: String) = PREFIX + param
 
@@ -168,11 +192,7 @@ object BatchParams {
      * scheduler never goes near the range grammar (`dpm..euler` is nonsense).
      */
     fun valuesOf(param: String, spec: String): List<String> {
-        val out = if (isRange(param)) {
-            BatchValues.parse(spec)
-        } else {
-            spec.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-        }
+        val out = if (isRange(param)) BatchValues.parse(spec) else split(param, spec)
         // ⚠ Outside [MIN_PER_AXIS]..[MAX_PER_AXIS] is "not a sweep", not a
         // clamped one: silently running two when nine were asked for is worse
         // than refusing and saying why.
@@ -192,11 +212,7 @@ object BatchParams {
         // computing the refusal from it would report "not a list or a range"
         // for eleven perfectly readable values — hiding the one number the
         // user needs in order to fix it. Caught by a test, 2026-09-10.
-        val values = if (isRange(param)) {
-            BatchValues.parse(spec)
-        } else {
-            spec.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-        }
+        val values = if (isRange(param)) BatchValues.parse(spec) else split(param, spec)
         return when {
             spec.isBlank() -> null
             values.isEmpty() && isRange(param) ->

@@ -366,7 +366,7 @@ fun RunLogPanel(
                             } else {
                                 stringResource(
                                     R.string.log_batching_knob_values,
-                                    a.count, a.param.knobWord(context), a.values.joinToString(", "),
+                                    a.count, a.param.knobWord(context), com.abrah.nightmare.BatchParams.joined(a.param, a.values),
                                 )
                             },
                             style = MeasureTextStyle,

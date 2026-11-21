@@ -666,6 +666,34 @@ open class CanvasScreenshotTest {
      * `vae_decode` has no seed of its own, and asking it for one is what a user
      * looking at a render they like actually means. [seedFor].
      */
+    /**
+     * ⭐ GitHub #137: a prompt node armed with a prompt batch shows the prompts it will run, numbered and cut to a
+     * line each ([com.abrah.nightmare.BatchParams.shown]), in place of the prompt box, with the toggle to change them.
+     */
+    @Test
+    fun anArmedPromptBatchListsItsPrompts() = shoot("inspector-prompt-batch") {
+        Surface(Modifier.fillMaxSize()) {
+            NodeInspectorBody(
+                nodeId = "text",
+                node = Node(
+                    "text", "core.prompt",
+                    mapOf(
+                        "prompt" to "a cat on grass",
+                        "negative" to "blurry",
+                        com.abrah.nightmare.BatchParams.keyFor("prompt") to
+                            "a cat on grass, golden hour\na red fox in deep snow, (soft light:1.2), 8k\na dog",
+                    ),
+                ),
+                type = NODE_TYPES["core.prompt"],
+                onSetParam = { _, _, _ -> },
+                onDelete = {},
+                onReset = {},
+                canSweep = true,
+                armedAxes = 1,
+            )
+        }
+    }
+
     @Test
     fun theDecoderShowsTheSeedThatMadeIt() = shoot("inspector-seed") {
         Surface(Modifier.fillMaxSize()) {

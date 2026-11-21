@@ -112,7 +112,12 @@ data class BatchSpec(val axes: List<BatchAxis> = emptyList()) {
 
     /** How each run differs, for a log line and a Results label. */
     fun labelFor(overrides: Map<String, Map<String, String>>): String =
-        axes.mapNotNull { a -> overrides[a.nodeId]?.get(a.param)?.let { "${a.param} $it" } }
+        axes.mapNotNull { a ->
+            overrides[a.nodeId]?.get(a.param)?.let {
+                // ⚠ A swept prompt is named by its place in the list (#137): the whole prompt is the card's own.
+                if (BatchParams.isList(a.param)) "${a.param} ${a.values.indexOf(it) + 1}" else "${a.param} $it"
+            }
+        }
             .joinToString("  ")
 
     companion object {

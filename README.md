@@ -29,7 +29,7 @@ touch. No server, no account, no cloud.
   Hugging Face inside the app.
 - **The desktop toolbox**: inpaint and outpaint, tap to select (Segment Anything), ControlNet, IP-Adapter,
   LoRAs, hires fix, Fix faces and hands (ADetailer), editing by instruction (FLUX.2 Klein, Qwen Image,
-  Fibo 2.0), upscalers, seed and setting sweeps as grids, and A1111 `parameters` in every saved PNG.
+  Fibo 2.0), upscalers, seed, setting and prompt sweeps as grids, and A1111 `parameters` in every saved PNG.
 - **Offline and private**: nothing is uploaded. A local API (off by default) also speaks AUTOMATIC1111's
   `/sdapi/v1/txt2img`, so other apps can use your phone as their image generator.
 

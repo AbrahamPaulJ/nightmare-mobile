@@ -22,6 +22,13 @@ side by side.
     Underneath, the dialog shows how many runs that makes and the values it read.
 4. Tap **Run N** (N is the number of runs). The setting's icon turns violet while it is armed.
 
+## A different prompt for each picture
+
+Tap the **prompt** node. On the **Prompt** box's top edge there is the same **bars icon**. Tap it and write up to 10
+prompts, **one per line** (a prompt's own commas are fine). Each picture takes the next prompt; the negative and every
+other setting stay as they are. The pictures are labelled `prompt 1`, `prompt 2` and so on. A prompt batch combines with
+one other setting, such as 5 prompts × 2 seeds = 10 pictures.
+
 Arm **two** settings and the batch runs every combination, a grid such as 3 CFG values ×
 4 step counts = 12 pictures.
 

@@ -92,7 +92,9 @@ class LastNodeTest {
         )
         // ⭐ An OUTPUT downstream does not stop a sampler being the last SAMPLER.
         assertTrue(canSweep(g, "s"))
-        assertFalse("a prompt is not a sampler", canSweep(g, "prompt"))
+        // ⭐ A prompt node arms a PROMPT batch (#137, 2026-11-21) by the prompts' own last-of-kind rule: the sampler
+        // after it does not stop it, as an output after a sampler does not stop the sampler.
+        assertTrue("the last prompt node sweeps its prompt", canSweep(g, "prompt"))
         assertFalse("a sampler is not an output", isLastOutput(g, "s"))
     }
 

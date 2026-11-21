@@ -537,6 +537,7 @@ fun NodeInspector(
             onSetResolution = { onSetResolution(nodeId, it) },
             onSetAspect = onSetAspect,
             canSweep = com.abrah.nightmare.canSweep(state.workflow.graph, nodeId),
+            armedAxes = com.abrah.nightmare.BatchParams.axesOf(state.workflow.graph).size,
             // ⚠ Read HERE for the same reason: what a prompt is measured
             // against depends on what it is WIRED into.
             promptBudget = com.abrah.nightmare.PromptTokens.budgetFor(state.workflow.graph, nodeId),
@@ -1349,6 +1350,11 @@ internal fun NodeInspectorBody(
     onSetAspect: (String) -> Unit = {},
     /** ⭐ Whether THIS node may arm a sweep — the last-node rule. */
     canSweep: Boolean = true,
+    /**
+     * ⭐ Sweeps armed on the WHOLE graph ([com.abrah.nightmare.BatchParams.MAX_AXES] is per graph): a prompt batch (#137)
+     * arms on the prompt node, so counting this node's alone let a third axis past the cap.
+     */
+    armedAxes: Int = 0,
     /** ⭐ What this node's prose is counted against — [com.abrah.nightmare.PromptTokens.budgetFor]. */
     promptBudget: com.abrah.nightmare.PromptTokens.Budget? = null,
     /** ⭐ The prompt box's hint when what it feeds reads prompts its own way (MiniMax H3's sections), else the widget's. */
@@ -2776,9 +2782,7 @@ internal fun NodeInspectorBody(
             BatchDialog(
                 node = node,
                 widget = w,
-                alreadyArmed = com.abrah.nightmare.BatchParams.axesOf(
-                    com.abrah.nightmare.Graph(listOf(node))
-                ).size,
+                alreadyArmed = maxOf(armedAxes, com.abrah.nightmare.BatchParams.axesOf(com.abrah.nightmare.Graph(listOf(node))).size),
                 onDismiss = { batching = null },
                 onSet = { spec ->
                     onSetParam(nodeId, com.abrah.nightmare.BatchParams.keyFor(w.name), spec)
@@ -3177,7 +3181,7 @@ internal fun NodeInspectorBody(
             // 2026-09-10.
             if (armedSpec != null) {
                 val vals = com.abrah.nightmare.BatchParams.valuesOf(w.name, armedSpec)
-                ArmedSweepRow(w.name.localizedKnobLabel(), vals, armedSpec) { batching = w }
+                ArmedSweepRow(w.name.localizedKnobLabel(), vals, armedSpec, com.abrah.nightmare.BatchParams.joined(w.name, vals)) { batching = w }
                 continue
             }
             if (why == null && w.numeric && w.min != null && w.max != null) {
@@ -3417,6 +3421,10 @@ internal fun NodeInspectorBody(
                 }
                 Row(Modifier.align(Alignment.TopEnd)) {
                 PromptExpandButton(name.localizedKnobLabel(), current) { text -> onSetParam(nodeId, name, text); show(text) }
+                // ⭐ A prompt batch's toggle (#137) on the border too: beside the box it narrowed the prompt against the negative.
+                if (batchable && com.abrah.nightmare.BatchParams.isList(name)) {
+                    BorderBatchToggle(armed = com.abrah.nightmare.BatchParams.armed(node, name), onClick = { batching = w })
+                }
                 if (name == "prompt" && onDescribe != null) {
                     DescribeToggle(
                         prompt = current,
@@ -3454,7 +3462,7 @@ internal fun NodeInspectorBody(
                 }
             }
             }
-            if (batchable) {
+            if (batchable && !com.abrah.nightmare.BatchParams.isList(w.name)) {
                 BatchToggle(
                     armed = com.abrah.nightmare.BatchParams.armed(node, w.name),
                     onClick = { batching = w },
@@ -4374,18 +4382,29 @@ internal fun pictureCap(pair: Boolean = false): androidx.compose.ui.unit.Dp {
  */
 /** ⭐ An ARMED knob's row: its name, what it will sweep, and the toggle. ONE function for the choice and the range. */
 @Composable
-private fun ArmedSweepRow(label: String, values: List<String>, armed: String, onClick: () -> Unit) {
+private fun ArmedSweepRow(label: String, values: List<String>, armed: String, shown: String = values.joinToString(", "), onClick: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Text(
-                stringResource(R.string.inspector_batching_values, values.size, values.joinToString(", ")),
+                stringResource(R.string.inspector_batching_values, values.size, shown),
                 style = NoteTextStyle,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
         BatchToggle(armed = armed, onClick = onClick)
     }
+}
+
+/** ⭐ [BatchToggle] on a prose box's top border, in the sheet's colour, as [TranslateToggle] sits there. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BorderBatchToggle(armed: String?, onClick: () -> Unit) {
+    Surface(
+        color = androidx.compose.material3.BottomSheetDefaults.ContainerColor,
+        shape = CircleShape,
+        modifier = Modifier.padding(end = 8.dp).offset(y = (-8).dp),
+    ) { BatchToggle(armed = armed, onClick = onClick) }
 }
 
 @Composable
@@ -4712,6 +4731,11 @@ private fun BatchDialog(
     // ⭐ The SEED is swept by COUNT ([com.abrah.nightmare.BatchParams.isCount]): one "how many" slider. ⚠ From/to
     // sliders over 1..10 read as seeds 1, 2, 3, while `rollSeeds` swaps them for random ones at the start.
     val isCount = com.abrah.nightmare.BatchParams.isCount(widget.name)
+    // ⭐ A PROMPT batch (#137): whole prompts, one per line, the node's own prompt as the first when nothing is armed.
+    val isList = com.abrah.nightmare.BatchParams.isList(widget.name)
+    var listText by remember {
+        mutableStateOf(stored.ifBlank { node.params[widget.name].orEmpty().lines().joinToString(" ").trim() })
+    }
     var count by remember {
         mutableStateOf(parsed.size.takeIf { it >= com.abrah.nightmare.BatchParams.MIN_PER_AXIS } ?: 4)
     }
@@ -4755,6 +4779,7 @@ private fun BatchDialog(
     }
 
     val spec = when {
+        isList -> listText
         !isRange -> chosen.joinToString(", ")
         isCount -> (1..count).joinToString(", ")
         else -> values.joinToString(", ")
@@ -4773,6 +4798,19 @@ private fun BatchDialog(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 when {
+                    isList -> {
+                        Text(
+                            stringResource(R.string.inspector_sweep_prompts_note, com.abrah.nightmare.BatchParams.MAX_PER_AXIS),
+                            style = NoteTextStyle,
+                        )
+                        OutlinedTextField(
+                            value = listText,
+                            onValueChange = { listText = it },
+                            minLines = 4,
+                            maxLines = 10,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     // ⭐ SCHEDULER: a set, with no order to make a range from.
                     !isRange -> {
                         Text(
@@ -4853,6 +4891,7 @@ private fun BatchDialog(
                     why ?: when {
                         armedValues.isEmpty() -> stringResource(R.string.inspector_not_sweeping)
                         isCount -> stringResource(R.string.inspector_sweep_seeds, armedValues.size)
+                        isList -> stringResource(R.string.inspector_sweep_prompts, armedValues.size)
                         else -> stringResource(
                             R.string.inspector_sweep_runs,
                             armedValues.size,

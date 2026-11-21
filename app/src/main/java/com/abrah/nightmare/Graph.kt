@@ -490,6 +490,8 @@ fun isLastOfKind(graph: Graph, nodeId: String, kind: (Node) -> Boolean): Boolean
 /** ⭐ May this sampler arm a sweep? Only the last one in its chain may. */
 fun canSweep(graph: Graph, nodeId: String): Boolean {
     val node = graph.byId[nodeId] ?: return false
+    // ⭐ #137: a prompt batch arms on the graph's LAST prompt node, by the sampler's own last-of-kind rule.
+    if (node.type == LoraNotes.PROMPT_TYPE) return isLastOfKind(graph, nodeId) { it.type == LoraNotes.PROMPT_TYPE }
     if (!isSampler(node.type)) return false
     return isLastOfKind(graph, nodeId) { isSampler(it.type) }
 }

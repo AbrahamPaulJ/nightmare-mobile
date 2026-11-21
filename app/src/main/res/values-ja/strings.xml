@@ -1375,6 +1375,8 @@
 <!-- review fixes (2026-10-22): canvas, inspector, ui -->
 <string name="inspector_sweep_count">個数：%1$d</string>
 <string name="inspector_sweep_seeds">%1$d 回実行し、それぞれ新しいランダムシードを使います</string>
+<string name="inspector_sweep_prompts_note">1 行に 1 つのプロンプト、最大 %1$d 個。画像ごとに次のプロンプトを使い、ノードのほかの設定はそのままです。</string>
+<string name="inspector_sweep_prompts">%1$d 回の実行、プロンプトごとに 1 回</string>
 <string name="output_auto_upscale_on">この出力はすでにすべての生成結果を拡大します。選択するには自動アップスケールをオフにしてください</string>
 <string name="inspector_sweep_this">このパラメータをスイープ</string>
 <string name="inspector_sweeping">%1$s をスイープ中</string>

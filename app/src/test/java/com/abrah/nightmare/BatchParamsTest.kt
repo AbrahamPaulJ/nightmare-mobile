@@ -195,4 +195,44 @@ class BatchParamsTest {
             org.junit.Assert.assertFalse(t, BatchParams.isBatchable(t, "seconds"))
         }
     }
+
+    /**
+     * ⭐ GitHub #137: a prompt batch is a LIST, one prompt per line, so a prompt's own commas survive; it arms on the
+     * graph's last prompt node, its runs are labelled by place, and the two-axis cap counts it with a sampler's.
+     */
+    @Test
+    fun promptsAreSweptOnePerLine() {
+        assertTrue(BatchParams.isList("prompt") && !BatchParams.isRange("prompt"))
+        assertEquals(
+            listOf("a cat, on grass", "a dog, (in snow:1.2)"),
+            BatchParams.valuesOf("prompt", "a cat, on grass\n\n  a dog, (in snow:1.2)  \n"),
+        )
+        assertNotNull(BatchParams.refusalFor("prompt", "only one, with commas", 0))
+        assertNull(BatchParams.refusalFor("prompt", "one\ntwo", 0))
+        assertNotNull(BatchParams.refusalFor("prompt", (1..11).joinToString("\n") { "p$it" }, 0))
+        assertEquals(listOf("1. short", "2. " + "x".repeat(PROMPT_BRIEF) + "…"), BatchParams.shown("prompt", listOf("short", "x".repeat(40))))
+
+        val g = Graph(listOf(
+            Node("p", LoraNotes.PROMPT_TYPE, mapOf("prompt" to "a cat", BatchParams.keyFor("prompt") to "a cat\na dog\na fox")),
+            Node("s", "sd15.sample", mapOf("seed" to "0", BatchParams.keyFor("seed") to "1, 2"), mapOf("prompt" to Source("p"))),
+        ))
+        assertTrue(canSweep(g, "p"))
+        assertEquals(6, BatchParams.runCount(g))
+        val spec = BatchSpec(BatchParams.axesOf(g))
+        assertEquals("prompt 2  seed 1", spec.labelFor(spec.expand()[2]))
+        // ⚠ The cap is the GRAPH's: two armed already, a third is refused wherever it is armed.
+        assertNotNull(BatchParams.refusalFor("cfg", "1, 2", BatchParams.axesOf(g).size))
+    }
+
+    /** ⚠ Only the LAST prompt node arms: an earlier one would re-render the later one's whole branch per prompt. */
+    @Test
+    fun onlyTheLastPromptNodeSweeps() {
+        val g = Graph(listOf(
+            Node("p1", LoraNotes.PROMPT_TYPE, mapOf("prompt" to "a")),
+            Node("s1", "sd15.sample", mapOf(), mapOf("prompt" to Source("p1"))),
+            Node("p2", LoraNotes.PROMPT_TYPE, mapOf("prompt" to "b"), mapOf("image" to Source("s1"))),
+        ))
+        assertTrue(!canSweep(g, "p1"))
+        assertTrue(canSweep(g, "p2"))
+    }
 }
