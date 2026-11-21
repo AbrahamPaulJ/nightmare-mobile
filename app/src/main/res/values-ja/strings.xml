@@ -269,6 +269,7 @@
 <string name="run_sdxl_lowram_anyway">このスマートフォンでは、スイッチの設定にかかわらず SDXL は低 RAM モードで実行されます。そうしないと、16 GB 未満のスマートフォンでは SDXL がメモリを使い切り、Android がアプリを終了させてしまいます。</string>
 <string name="run_moss_few_steps">この MOSS モデルは %1$d ステップ用に作られています。それより少ないと、暗く平坦な部分がブロック状になります。4 ステップには 4 ステップ用モデルをお使いください。</string>
 <string name="run_flux1_few_steps">FLUX.1 dev は 20 ステップ以上用に作られています。それより少ないと、毛並みや肌、細部の仕上がりが不十分になります。</string>
+<string name="run_dit_all_cpu">この端末では %1$s を CPU で実行します。NPU ではこのモデルを実行できず、GPU ルートも対応していません。1 ステップに数分、大きな画像では 1 時間以上かかることがあります（テスターの 1024x1024・18 ステップで 96 分）。キャンバスを小さくするかステップを減らすと早く終わります。</string>
 <string name="run_dit_cpu_quant">このモデルの重みは %1$s で、NPU では実行できません。CPU で実行されるため、10 倍以上遅くなります。同じモデルの Q4_0 または Q8_0 版は NPU で実行できます。</string>
 <string name="run_v69_npu_off">このチップでは NPU が応答しなかったため、設定の「DiT モデルで NPU を試す（テスト）」をオフにしました。次回の実行では GPU または CPU を使用します。</string>
 <string name="run_ref_fit_warning">参照ありの %1$s：%2$s はこのスマートフォンには大きすぎる可能性があり、失敗するかもしれません。%3$s なら収まります。それでも実行します</string>

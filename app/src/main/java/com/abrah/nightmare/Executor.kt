@@ -1434,6 +1434,7 @@ internal fun npuSpaceRefused(
     log: Iterable<String>,
     died: Boolean = false,
     lift: (needMb: Double) -> String? = { null },
+    strike: () -> Int = { 1 },
     learn: () -> String? = { null },
 ): String? {
     // ⚠⚠ Only THIS render's lines (after its `Req Rcvd`, like [LoraPartial]): a map failure earlier in the same launch
@@ -1462,6 +1463,13 @@ internal fun npuSpaceRefused(
         // engine then died (SIGSEGV). A smaller weights budget does not shrink that buffer: say what it was, learn nothing.
         mine.firstNotNullOfOrNull { GALLOC_FAILED.find(it) }?.let { g ->
             val mb = g.groupValues[1].toLong() / (1 shl 20)
+            // ⚠⚠ GitHub #148 (Zenfone 10, SM8550, an imported Anima): but the SAME failure every run is the phone's map
+            // ceiling, not chance: five decodes at 512x512 failed at 1.75 GiB and passed at 1.25, and nothing here taught
+            // it. Fewer mapped weights leave the DSP room for the buffer, so a second strike lowers the budget.
+            if (strike() >= 2) learn()?.let {
+                return "this phone's NPU could not find $mb MB of working memory for this step again. It now runs with a " +
+                    "smaller budget ($it GiB), a little slower: press Run again [${body.take(80)}]"
+            }
             return "this phone's NPU could not find $mb MB of working memory for this step, this time (the weights had " +
                 "loaded). Press Run again; if it keeps happening at this size, use a smaller canvas [${body.take(80)}]"
         }
@@ -1510,7 +1518,10 @@ class OpFailure(op: String, val code: Int, val body: String) :
  * engine left a real error, that error leads.
  */
 internal fun explainOpFailure(code: Int, body: String): String {
-    npuSpaceRefused(body, BackendProcess.newestLaunch(), died = code == -1, lift = BackendProcess::liftDitMapCap, learn = BackendProcess::learnDitMapLimit)?.let { return it }
+    npuSpaceRefused(
+        body, BackendProcess.newestLaunch(), died = code == -1, lift = BackendProcess::liftDitMapCap,
+        learn = BackendProcess::learnDitMapLimit, strike = BackendProcess::workingBufferStrike,
+    )?.let { return it }
     if (code != -1) return body
     // ⚠⚠ A backend that just died is still "running" for a few ms after its
     // socket closed ([BackendProcess.awaitExit]); deciding at that instant is

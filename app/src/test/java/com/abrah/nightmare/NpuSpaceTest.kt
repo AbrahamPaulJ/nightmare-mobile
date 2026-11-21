@@ -125,6 +125,10 @@ class NpuSpaceTest {
         val said = npuSpaceRefused("EOFException: no message", crash, died = true) { learned = true; "2.25" }!!
         assertTrue(said, said.contains("733 MB of working memory"))
         assertTrue("the budget is not lowered", !learned)
+        // ⭐ GitHub #148: the same failure again within the hour is the phone's ceiling, and lowers the budget.
+        val again = npuSpaceRefused("EOFException: no message", crash, died = true, strike = { 2 }) { learned = true; "1.25" }!!
+        assertTrue(again, again.contains("smaller budget (1.25 GiB)"))
+        assertTrue("the budget is lowered", learned)
     }
 
     @Test

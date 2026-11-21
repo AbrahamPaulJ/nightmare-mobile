@@ -1318,6 +1318,13 @@ class SdSampler(
                 "The weights of this model are %1\$s, which the NPU cannot run: they run on the CPU, ten times slower or more. A Q4_0 or Q8_0 version of the same model runs on the NPU.",
                 types))
         }
+        // ⭐ LIST item 33 (a tester waited 96 min for 18 steps of FLUX.3 Klein at 1024²): the whole DiT on the CPU, said
+        // before the wait, not after it.
+        ModelCatalog.byId(effectiveParams(node)["model"].orEmpty())?.takeIf { ditAllOnCpu(it, DeviceProbe.caps()) }?.let { spec ->
+            ctx.warn(ctx.text(R.string.run_dit_all_cpu,
+                "This phone runs %1\$s on its CPU: its NPU cannot run this model and the GPU route does not take it. Each step can take minutes, a large picture over an hour (a tester's 18 steps at 1024x1024 took 96 min). A smaller canvas or fewer steps finish sooner.",
+                spec.label))
+        }
         // ⭐⭐ The picture under the fix, remembered without the fix's own params ([com.abrah.nightmare.detail.Detailer.PARAMS]): Fix faces
         // switched on, or a new Fix strength or Fix seed, redraws the faces on the picture already made (Saved #7072,
         // "it reruns the full diffusion sampling"). ⚠ Safe because Run rolls seed 0 into a real seed first
@@ -1335,6 +1342,17 @@ class SdSampler(
     }
 
     /** ⭐ The CPU-only weight types of this node's DiT GGUF ([GgufHeader.cpuMatmulTypes]), joined, or null. */
+    /**
+     * ⭐ Every stage of [spec] on the CPU: the chip's NPU cannot run a DiT ([BackendProcess.ditOnCpu]) and the GPU route
+     * does not take this model, or the phone's GPU would not start ([DitGpu.failed], GitHub #145). The launch's own rule
+     * (`NM_DIT_BACKEND` = `CPU_ALL`), said for the run log.
+     */
+    internal fun ditAllOnCpu(spec: ModelSpec, caps: DeviceProbe.Caps): Boolean {
+        if (!spec.isDit) return false
+        val gpu = DitGpu.runs(spec, caps)
+        return (BackendProcess.ditOnCpu(caps) && !(gpu && !DitGpu.failed)) || (gpu && DitGpu.failed)
+    }
+
     private fun cpuOnlyWeights(ctx: NodeCtx, p: Map<String, String>): String? {
         if (!family.dit) return null
         val c = ctx.android ?: return null

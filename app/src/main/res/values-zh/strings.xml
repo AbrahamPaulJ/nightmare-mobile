@@ -254,6 +254,7 @@
     <string name="run_sdxl_lowram_anyway">无论开关如何设置，SDXL 在这台手机上都以低内存模式运行：否则在内存小于 16 GB 的手机上 SDXL 会占满内存，Android 会关闭应用。</string>
     <string name="run_moss_few_steps">此 MOSS 模型需要 %1$d 步：步数更少时，暗部和平坦区域会出现色块。4 步请使用 4 步模型。</string>
     <string name="run_flux1_few_steps">FLUX.1 dev 需要 20 步或更多：步数更少时，毛发、皮肤和细节会显得未完成。</string>
+    <string name="run_dit_all_cpu">这台手机用 CPU 运行 %1$s：它的 NPU 无法运行这个模型，GPU 路线也不支持它。每一步可能要几分钟，大图可能超过一小时（一位测试者在 1024x1024 下 18 步用了 96 分钟）。更小的画布或更少的步数会更快完成。</string>
     <string name="run_dit_cpu_quant">此模型的权重为 %1$s，NPU 无法运行：它们在 CPU 上运行，慢十倍或更多。同一模型的 Q4_0 或 Q8_0 版本可在 NPU 上运行。</string>
     <string name="run_v69_npu_off">此芯片上的 NPU 没有响应，因此设置中的“尝试用 NPU 运行 DiT 模型（测试）”已关闭。下次运行改用 GPU 或 CPU。</string>
     <string name="run_ref_fit_warning">%1$s 使用参考图：%2$s 对这台手机可能太大，可能会失败。%3$s 可以。仍然尝试</string>

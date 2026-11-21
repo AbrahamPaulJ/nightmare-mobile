@@ -277,6 +277,7 @@
     <string name="run_sdxl_lowram_anyway">SDXL runs in low RAM mode on this phone whichever way the switch is set: without it SDXL fills a phone under 16 GB and Android closes apps.</string>
     <string name="run_moss_few_steps">This MOSS model is made for %1$d steps: with fewer, dark and flat areas come out in blocks. The 4-step model is the one for 4 steps.</string>
     <string name="run_flux1_few_steps">FLUX.1 dev is made for 20 steps or more: with fewer, fur, skin and fine detail come out unfinished.</string>
+    <string name="run_dit_all_cpu">This phone runs %1$s on its CPU: its NPU cannot run this model and the GPU route does not take it. Each step can take minutes, a large picture over an hour (a tester\'s 18 steps at 1024x1024 took 96 min). A smaller canvas or fewer steps finish sooner.</string>
     <string name="run_dit_cpu_quant">The weights of this model are %1$s, which the NPU cannot run: they run on the CPU, ten times slower or more. A Q4_0 or Q8_0 version of the same model runs on the NPU.</string>
     <string name="run_v69_npu_off">The NPU did not answer on this chip, so Try the NPU for DiT models (test) is now off in Settings. The next Run uses the GPU or CPU.</string>
     <string name="run_ref_fit_warning">%1$s with a reference: %2$s is probably too big for this phone and may fail. %3$s fits. Trying anyway</string>

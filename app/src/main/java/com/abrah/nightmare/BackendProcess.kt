@@ -1474,6 +1474,20 @@ object BackendProcess {
         return DeviceProbe.learnDitMapLimit(ctx, launchedDitModel, launchedDitBudget)
     }
 
+    /**
+     * ⭐ How many times the launched DiT model's working buffer failed to map within the last hour, this one included
+     * (GitHub #148): one is chance (#125, once in 15+ renders), two is this phone's ceiling. In memory only: a restart
+     * forgets, which costs one more failed Run at worst.
+     */
+    fun workingBufferStrike(now: Long = System.currentTimeMillis()): Int = synchronized(workingBufferFails) {
+        val model = launchedDitModel ?: return 1
+        val recent = workingBufferFails.getOrPut(model) { ArrayDeque() }
+        while (recent.isNotEmpty() && now - recent.first() > 60 * 60_000L) recent.removeFirst()
+        recent.addLast(now)
+        recent.size
+    }
+    private val workingBufferFails = HashMap<String, ArrayDeque<Long>>()
+
     /** ⭐ A block needed more than the learned cap ([DeviceProbe.liftDitMapCap]); the changed budget relaunches. */
     fun liftDitMapCap(needMb: Double): String? {
         val ctx = appContext ?: return null
