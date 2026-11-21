@@ -2761,12 +2761,16 @@ internal fun NodeInspectorBody(
         if (showingInfo && onInfo != null) {
             com.abrah.nightmare.ui.ResultInfoDialog(onInfo()) { showingInfo = false }
         }
-        if (pickingLoras) {
+        // ⚠⚠ Called from a composable LAMBDA, as the knob list is: R8 inlines a one-caller private function, so a direct
+        // call put [NodeLoraPicker] back inside this body, and 1.6.317's LoRA chip branches tipped it into a method ART's
+        // verifier rejects again (`tools/verify_dex.sh` on the 1.6.321 candidate). The lambda compiles as its own class.
+        val loraPicker: @Composable () -> Unit = {
             NodeLoraPicker(
                 nodeId, node, type, loraEpoch, onSetParam, onImportLora, onBrowseLoras, onAddToPrompt, onReplacePrompt,
                 onDeleteLora, onDismiss = { pickingLoras = false },
             )
         }
+        if (pickingLoras) loraPicker()
 
         batching?.let { w ->
             BatchDialog(
