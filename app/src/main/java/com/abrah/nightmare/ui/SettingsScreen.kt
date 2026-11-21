@@ -1127,8 +1127,8 @@ private fun TagDictionaryCard(
  */
 /**
  * ⭐ The app's own language (Android 13+, `LocaleManager`, which keeps it across launches and recreates the screen):
- * the phone's, or one of the three the app is written in, each named in itself. Hidden below Android 13, where there
- * is no per-app language to set. `res/xml/locales_config.xml` lists the same three for the system's App languages.
+ * the phone's, or one of the four the app is written in, each named in itself. Hidden below Android 13, where there
+ * is no per-app language to set. `res/xml/locales_config.xml` lists the same four for the system's App languages.
  */
 @Composable
 private fun AppLanguageCard() {
@@ -1152,7 +1152,7 @@ private fun AppLanguageCard() {
 }
 
 /** ⚠ Each language named in itself, never translated; null = the phone's ([R.string.language_system]). */
-private val APP_LANGUAGES = listOf("" to null, "en" to "English", "ru" to "Русский", "zh" to "中文")
+private val APP_LANGUAGES = listOf("" to null, "en" to "English", "ru" to "Русский", "zh" to "中文", "ja" to "日本語")
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable

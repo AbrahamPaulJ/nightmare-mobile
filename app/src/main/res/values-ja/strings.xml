@@ -86,6 +86,7 @@
 <string name="in_use">使用中</string>
 <string name="rename_node">ノード名</string>
 <string name="run_starting">開始中…</string>
+<string name="run_preparing">準備中</string>
 <string name="cancel_run">キャンセル</string>
 <string name="stop_run_title">この実行を停止しますか？</string>
 <string name="stop_run_body">%1$s の間実行しています。すでに完了したノードの結果は残るため、再実行するとそこから続行できます。</string>
@@ -570,8 +571,10 @@
 <string name="run_notice_title">%1$s を実行中</string>
 <string name="run_notice_running">生成中</string>
 <string name="results_import">画像をインポート</string>
-<string name="results_imported">%2$d 件中 %1$d 件をインポートしました。Nightmare の情報がない画像はスキップされました。</string>
+<string name="results_imported">%2$d 件中 %1$d 件をインポートしました。Nightmare、ComfyUI、A1111 の情報がない画像はスキップされました。</string>
 <string name="flows_import_png_none">この画像には Nightmare のフローが含まれていません。フローが入っているのは、「作り方を書き込む」をオンにして保存した画像だけです。</string>
+<string name="flows_import_png_foreign">%1$s の画像から読み込みました：%2$s。この画像は %3$s で作成されています。このフローではここで選択したモデルを使います。</string>
+<string name="import_read_prompt">プロンプト</string>
 <string name="inspector_reference_size">参照サイズ</string>
 <string name="inspector_reference">参照</string>
 <string name="inspector_reference_hint">モデルが読み取る、この画像の部分です。描き直されることはなく、独自の形を保ちます。出力サイズに合わせて変形されることはありません。</string>
@@ -656,7 +659,8 @@
 <string name="models_family_ideogram">約 11.6 GB。RAM 12 GB 以上の端末、8 Elite 以降。画像内の読みやすい文字が最も得意です：看板、ポスター、ラベル。8ステップ高速化が常時適用されます。8 Elite で 768x768、約 5.5 分。テキストから画像のみ。非商用利用のみ（Ideogram のライセンス）。Wi-Fi をお使いください。</string>
 <string name="models_family_flux3">約 6.2 GB。8 Gen 3 以降。Black Forest Labs の最新の画像モデル：シャープな精細さと優れたプロンプト追従性、16ステップ。8 Elite で 512x512 約 45 秒、1024x1024 約 2 分。テキストから画像のみ。FLUX Kommunity License の下で提供されます。Wi-Fi をお使いください。</string>
 <string name="models_family_flux1">約 10.8 GB。RAM 12 GB 以上の端末、8 Elite 以降。Black Forest Labs の FLUX.1 dev：512x512 で約 4 分、1024x1024 で約 6 分、20ステップ。テキストから画像のみ。非商用利用のみ。</string>
-<string name="models_family_fibo2">約 8.4 GB。8 Gen 3 以降、RAM 12 GB。Bria の Fibo 2.0 Edit：画像を接続して変更したい内容を伝えると、4ステップで編集します。画像の残りの部分は保持され、看板に文字を書きます。画像なしではテキストから画像モデルにもなります：8 Elite で 896x1600、約 1 分。非商用ライセンス（Bria）。Wi-Fi をお使いください。</string>
+<string name="models_family_fibo2">約 8.4 GB。8 Gen 3 以降、RAM 12 GB。Bria の Fibo 2.0 Edit：画像を接続して変更したい内容を伝えると、4ステップで編集します。画像の残りの部分は保持され、看板に文字を書きます。画像なしではテキストから画像モデルにもなります：8 Elite で 896x1600、約 1 分。Fibo 2.0 Dev はベースモデルで、Edit と併用すると 4.9 GB 増えます：30ステップで、より遅く、プロンプトにより忠実です（8 Elite で 1024x1024、約 30 分）。非商用ライセンス（Bria）。Wi-Fi をお使いください。</string>
+<string name="models_family_h3image">約 15 GB（テキストエンコーダーを共有する Krea 2 と併用時は 13 GB）。RAM 12 GB 以上の端末、8 Gen 3 以降。MiniMax の H3 動画モデルから作られた画像モデル：6ステップ、CFG なし：8 Elite で 1024x1024、約 1 分 45 秒（8 Gen 3 ではもう少しかかります）。看板などの文字が得意です。テキストから画像のみ。欧州連合、英国、韓国、米国ではライセンスの対象外です。Wi-Fi をお使いください。</string>
 <string name="models_family_other">各約 3.5 GB、展開中は約 7.5 GB の空きが必要です。Wi-Fi をお使いください。</string>
 <string name="models_import_checkpoint">チェックポイントをインポート</string>
 <string name="models_import_dit_body">.safetensors または .gguf を1つ。CivitAI や Hugging Face のチェックポイントをそのまま使います。変換はしません。Klein 4B と Z-Image のものはテキストエンコーダと VAE を借ります（取得に最大 2.6 GB、そのモデルを持っていれば不要）。Klein 9B と Krea 2 のものは独自のコピーを取得します（4.8 GB と 2.6 GB）。端末の RAM の約半分より大きいファイルは、レンダリング中に Android に強制終了される可能性が高いです。</string>
@@ -773,6 +777,7 @@
 <string name="hint_only_masked_short">マスクの周囲をクロップしてレンダリングします。塗った部分の細部がより出ます</string>
 <string name="hint_stitch_short">オフ: 結果は選んだフレームのままです。オン: 写真全体に貼り戻されます</string>
 <string name="hint_cfg_distilled">1 がこれらのモデルが蒸留で想定している値です。1 を超えるとネガティブプロンプトが読まれ始め、各ステップの時間が約2倍になります</string>
+<string name="hint_flow_shift">フローシフト。0 はモデル独自の値を使います（Z-Image は 3、NitroFusion 2 は 6）。高いほどステップを構図に多く使い、低いほど細部に使います。変更するとモデルを再読み込みします（数秒）</string>
 <string name="hint_dit_size">どちらの辺も %1$d ピクセル単位のステップで任意のサイズにできます。再読み込みは不要で、画像が大きいほど比例して時間がかかります</string>
 <string name="hint_dit_shape">幅と高さを、ほぼ同じ大きさでこの形に設定します。下のスライダーで微調整できます。再読み込みは不要です</string>
 <string name="hint_fixed_sizes">このモデルが学習したサイズのみです。他のサイズではブロック状になります。再読み込みは不要です</string>
@@ -823,6 +828,7 @@
 <string name="wan_shape_differs">画像は %1$s で、クリップの %2$s と形が異なります。収まるようにクロップされます。</string>
 <string name="wan_match_picture">画像に合わせる (%1$s)</string>
 <string name="knob_cfg">CFG</string>
+<string name="knob_shift">シフト</string>
 <string name="knob_loras">LoRA</string>
 <string name="knob_output_width">出力の幅</string>
 <string name="knob_output_height">出力の高さ</string>
@@ -1405,6 +1411,7 @@
 <string name="sampling_fold">スケジューラ、シード、CFG</string>
 <string name="sampling_seed_value">シード %1$s</string>
 <string name="sampling_cfg_value">CFG %1$s</string>
+<string name="sampling_shift_value">シフト %1$s</string>
 <string name="hint_wan14_seconds">クリップの長さ（秒）で、各秒は16フレームです。1〜3秒。720x1280 で1秒の生成には 8 Elite で約12分かかります。さらに、秒数が増えるほど1秒あたりの時間は長くなります：720p で3秒だと1時間かかることがあります。</string>
 <string name="hint_wan13_seconds">クリップの長さ（秒）で、各秒は16フレームです。0〜5秒で、0 は静止画です。832x480 で2秒の生成には 8 Elite で約2分かかります。さらに、秒数が増えるほど1秒あたりの時間は長くなります。</string>
 <string name="knob_smooth">スムーズモーション</string>
@@ -1447,6 +1454,16 @@
 <string name="mb_powered_h3">Powered by MiniMax H3</string>
 <string name="licence_h3_title">MiniMax H3 Community License</string>
 <string name="licence_h3_terms">MiniMax H3 は MiniMax が作成し、MiniMax H3 Community License のもとで共有されています。ダウンロードすると、そのライセンスに同意したことになります。要点は次のとおりです：\n\n• 欧州連合、英国、韓国、米国での使用は対象外です。そこではダウンロードも使用もしないでください。\n• これで作成して公開するものには、AI で作成されたことを明記しなければなりません。\n• そのクリップを他の AI モデルの学習や改善に使うことはできません。\n• その利用ポリシーが適用されます：違法または有害なものは禁止です。\n\nNightmare は、このモデルを使用する箇所に \"Powered by MiniMax H3\" と表示します。</string>
+<string name="mb_powered_h3img">Powered by MiniMax-H3-Image</string>
+<string name="licence_h3img_title">MiniMax-H3-Image Community License</string>
+<string name="licence_h3img_terms">MiniMax-H3-Image は MiniMax が作成し、MiniMax-H3-Image Community License のもとで共有されています。ダウンロードすると、そのライセンスに同意したことになります。要点は次のとおりです：
+
+• 欧州連合、英国、韓国、米国での使用は対象外です。そこではダウンロードも使用もしないでください。
+• これで作成して公開するものには、AI で作成されたことを明記しなければなりません。
+• その画像を他の AI モデルの学習や改善に使うことはできません。
+• その利用ポリシーが適用されます：違法または有害なものは禁止です。
+
+Nightmare は、このモデルを使用する箇所に \"Powered by MiniMax-H3-Image\" と表示します。</string>
 <string name="licence_read">ライセンス全文を読む</string>
 <string name="licence_accept">同意してダウンロード</string>
 <string name="hint_h3_size">384x384 が最速です。最大で 768x1344 相当のピクセル数まで；サイズが大きいほど収まる秒数は少なくなります（下の注記に条件が書かれています）。384 未満にはしないでください：小さいクリップは色が失われます。</string>
@@ -1502,6 +1519,7 @@
 <string name="layout_clear">クリア</string>
 <string name="layout_clear_title">レイアウトをクリアしますか？</string>
 <string name="layout_clear_body">%1$d 個のボックスと、その内容がすべて削除されます。プロンプトは保持されます。</string>
+<string name="layout_box_hint">ボックス %1$d の中身：種類と見た目。画像のその部分のプロンプトに書き込まれます。</string>
 <string name="layout_box_title">ボックス %1$d</string>
 <string name="layout_delete_box">ボックス %1$d を削除</string>
 <string name="layout_kind">種類</string>
@@ -1511,4 +1529,5 @@
 <string name="shell_ram_chip">RAM %1$s / %2$s GB free · CPU %3$s° GPU %4$s° NPU %5$s° Battery %6$s°</string>
 <string name="chip_temps">チップの温度を表示</string>
 <string name="chip_temps_hint">RAM の行には、バッテリーの代わりに CPU、GPU、NPU（それぞれ最も熱いセンサー）が表示されます。発熱の警告は引き続きバッテリーに従います。</string>
+<string name="dit_area_too_big">%1$dx%2$d は、このモデルが端末でレンダリングできる大きさを超えています。形は自由ですが、合計 %3$dx%4$d ピクセル以内にしてください：3840x2160（4K）なら収まります。</string>
 </resources>

@@ -112,7 +112,7 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
 - **Translate**: a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
 
 ## Your phone, your files
-- **English, Chinese and Russian**: the app follows your phone's language, or pick one in **Settings → Language**.
+- **English, Chinese, Russian and Japanese**: the app follows your phone's language, or pick one in **Settings → Language**.
 - **Themes**: follow the system, Dark, Black (AMOLED, true-black backgrounds) or Light, with a violet, blue, teal, orange or pink accent, or your wallpaper's colours on Android 12 and up.
 - **Models where you can see them**: optionally in `Download/Nightmare`, surviving an uninstall.
 - **Download from a mirror**: hf-mirror.com or any address, for every model the app fetches and the DiT engine (which falls back from GitHub to Hugging Face by itself); large files come over four connections at once. Tap Download on a second model while one downloads and it waits its turn. Runs carry on during a download with any model but the one downloading.
