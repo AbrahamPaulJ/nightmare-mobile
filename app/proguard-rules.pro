@@ -41,3 +41,7 @@
 -keep class ai.onnxruntime.** { *; }
 -keepclassmembers class ai.onnxruntime.** { *; }
 -dontwarn ai.onnxruntime.**
+
+# The vision model's bridge (engines/vlm/nmvlm.cpp) calls Sink.onText from C, by name, which R8 cannot see.
+-keep interface com.abrah.nightmare.vlm.VlmNative$Sink { *; }
+-keep class com.abrah.nightmare.vlm.VlmNative { native <methods>; }

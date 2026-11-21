@@ -672,6 +672,23 @@ fun SettingsScreen(
                             stringResource(R.string.heat_pause), stringResource(R.string.heat_pause_hint),
                             lowRam.heatPause, { onLowRam(Prefs.KEY_HEAT_PAUSE, it) },
                         )
+                        // ⭐ Where it pauses: 40, 45 or 50 °C (the user, 2026-11-21), the inspector's own slider.
+                        if (lowRam.heatPause) {
+                            val ctx = androidx.compose.ui.platform.LocalContext.current
+                            var at by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(Prefs.heatPauseAt) }
+                            com.abrah.nightmare.canvas.SliderRow(
+                                widget = com.abrah.nightmare.Widget(
+                                    name = Prefs.KEY_HEAT_PAUSE_AT, type = "int", default = Prefs.HEAT_PAUSE_DEFAULT.toString(),
+                                    min = Prefs.HEAT_PAUSE_STOPS.first().toDouble(), max = Prefs.HEAT_PAUSE_STOPS.last().toDouble(),
+                                    step = 5, hintRes = R.string.heat_pause_at_hint,
+                                ),
+                                current = at.toString(),
+                                onSet = { v -> at = v.toIntOrNull() ?: at },
+                                onCommit = { Prefs.setHeatPauseAt(ctx, at) },
+                                label = stringResource(R.string.heat_pause_at),
+                                unit = " °C",
+                            )
+                        }
                         // ⭐ GitHub #78: the chip's temperatures in the RAM line, where the phone lets the app read them.
                         if (com.abrah.nightmare.ChipTemps.available) com.abrah.nightmare.canvas.BoolKnobRow(
                             stringResource(R.string.chip_temps), stringResource(R.string.chip_temps_hint),

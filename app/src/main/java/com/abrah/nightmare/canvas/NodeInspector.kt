@@ -69,6 +69,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -555,6 +556,8 @@ fun NodeInspector(
                 describePictures(state, types, imageFor)
             } else emptyList(),
             describeDefault = com.abrah.nightmare.DescribeMode.defaultFor(state.workflow.graph, nodeId),
+            describeVision = com.abrah.nightmare.DescribeMode.visionFor(state.workflow.graph, nodeId)
+                .takeIf { com.abrah.nightmare.vlm.VisionDescriber in com.abrah.nightmare.DescribeMode.models },
             installedModels = installedModels,
             onSetModel = onSetModel,
             preview = shownId?.let(imageFor),
@@ -1370,6 +1373,11 @@ internal fun NodeInspectorBody(
     describePictures: List<DescribePicture> = emptyList(),
     /** ⭐ The chip the describe dialog opens on — [com.abrah.nightmare.DescribeMode.defaultFor]. */
     describeDefault: com.abrah.nightmare.DescribeMode = com.abrah.nightmare.DescribeMode.DETAILED,
+    /**
+     * ⭐ The vision chip's mode for this prompt ([com.abrah.nightmare.DescribeMode.visionFor]); null where the vision
+     * model is not offered, and no chip is drawn.
+     */
+    describeVision: com.abrah.nightmare.DescribeMode? = null,
     /** ⚠ Whether a mode's model is on the phone — the tests answer for it. */
     describeReady: (com.abrah.nightmare.DescribeMode) -> Boolean = { it.model.installed },
     installedModels: List<CheckpointChoice> = emptyList(),
@@ -3436,6 +3444,7 @@ internal fun NodeInspectorBody(
                         prompt = current,
                         pictures = describePictures,
                         defaultMode = describeDefault,
+                        visionMode = describeVision,
                         isReady = describeReady,
                         onDescribe = onDescribe,
                         onWrite = { text ->
@@ -3904,6 +3913,10 @@ internal fun SliderRow(
      * sixty invalidations and sixty log lines for one drag.
      */
     onCommit: (() -> Unit)? = null,
+    /** ⭐ A label of its own, for a slider outside a node (Settings); null = the knob's name, localised. */
+    label: String? = null,
+    /** Printed after the value: " °C". */
+    unit: String = "",
 ) {
     val min = widget.min!!.toFloat()
     val max = widget.max!!.toFloat()
@@ -3944,9 +3957,9 @@ internal fun SliderRow(
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-            widget.name.localizedKnobLabel() + "   " +
-                if (isInt) shown.roundToInt().toString()
-                else fixed(shown, decimalsAt(shown)),
+            (label ?: widget.name.localizedKnobLabel()) + "   " +
+                (if (isInt) shown.roundToInt().toString()
+                else fixed(shown, decimalsAt(shown))) + unit,
             style = MaterialTheme.typography.bodyMedium,
         )
         Slider(
@@ -4501,6 +4514,8 @@ private fun DescribeToggle(
     prompt: String,
     pictures: List<DescribePicture>,
     defaultMode: com.abrah.nightmare.DescribeMode,
+    /** ⭐ The vision chip's first style for this prompt, or null for no vision chip. */
+    visionMode: com.abrah.nightmare.DescribeMode?,
     onDescribe: (picture: String, mode: com.abrah.nightmare.DescribeMode, done: (String?) -> Unit) -> Unit,
     onWrite: (String) -> Unit,
     /** ⚠ Read at the TAP — whether "Describing…" is true, or a download popup is coming. */
@@ -4579,9 +4594,24 @@ private fun DescribeToggle(
             onDismissRequest = close,
             title = { Text(stringResource(R.string.describe_action)) },
             text = {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp))
-                    Text(stringResource(R.string.describe_working), style = MaterialTheme.typography.bodyMedium)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp))
+                        Text(stringResource(R.string.describe_working), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    // ⭐ The vision model's answer as it is written (GitHub #120): tens of seconds of a bare spinner read as a hang.
+                    if (mode.vision != null) {
+                        val live by com.abrah.nightmare.vlm.VisionDescriber.live.collectAsState()
+                        if (live.isNotBlank()) {
+                            Text(
+                                live.trim(),
+                                style = NoteTextStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 8,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {},
@@ -4597,15 +4627,40 @@ private fun DescribeToggle(
                         com.abrah.nightmare.DescribeMode.DETAILED to stringResource(R.string.describe_detailed),
                         com.abrah.nightmare.DescribeMode.TAGS to stringResource(R.string.describe_tags),
                     )
+                    // ⭐ The vision model is ONE chip (GitHub #120); what it writes is the row under it.
+                    val vlmWord = stringResource(R.string.describe_vlm)
+                    val vision = mode.vision != null
                     Chooser(
                         label = stringResource(R.string.describe_length),
                         hint = stringResource(
-                            if (mode == com.abrah.nightmare.DescribeMode.TAGS) R.string.describe_tags_hint else R.string.describe_words_hint,
+                            when {
+                                vision -> R.string.describe_vlm_hint
+                                mode == com.abrah.nightmare.DescribeMode.TAGS -> R.string.describe_tags_hint
+                                else -> R.string.describe_words_hint
+                            },
                         ),
-                        options = words.values.toList(),
-                        current = words.getValue(mode),
-                        onPick = { w -> mode = words.entries.first { it.value == w }.key },
+                        options = words.values.toList() + listOfNotNull(vlmWord.takeIf { visionMode != null }),
+                        current = if (vision) vlmWord else words.getValue(mode),
+                        onPick = { w ->
+                            mode = if (w == vlmWord) {
+                                if (vision) mode else visionMode ?: mode
+                            } else words.entries.first { it.value == w }.key
+                        },
                     )
+                    if (vision) {
+                        val forms = mapOf(
+                            com.abrah.nightmare.DescribeMode.VLM_PROSE to stringResource(R.string.describe_vlm_prose),
+                            com.abrah.nightmare.DescribeMode.VLM_TAGS to stringResource(R.string.describe_tags),
+                            com.abrah.nightmare.DescribeMode.VLM_LAYOUT to stringResource(R.string.layout_tab),
+                        )
+                        Chooser(
+                            label = stringResource(R.string.describe_vlm_form),
+                            hint = null,
+                            options = forms.values.toList(),
+                            current = forms.getValue(mode),
+                            onPick = { w -> mode = forms.entries.first { it.value == w }.key },
+                        )
+                    }
                     Text(stringResource(R.string.describe_on_canvas), style = MaterialTheme.typography.labelLarge)
                     if (pictures.isEmpty()) {
                         Text(

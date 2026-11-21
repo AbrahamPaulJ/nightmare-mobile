@@ -376,6 +376,10 @@
     <string name="describe_tags">Tags</string>
     <string name="describe_tags_hint">Danbooru tags, for anime models like Illustrious, Anima and Pony.</string>
     <string name="describe_words_hint">Sentences, for photo models, SDXL and FLUX.2.</string>
+    <string name="describe_vlm" translatable="false">Qwen3-VL</string>
+    <string name="describe_vlm_form">Write as</string>
+    <string name="describe_vlm_prose">Sentences</string>
+    <string name="describe_vlm_hint">Reads the picture with a vision model on your phone and writes it the way the wired model reads: tags for anime models, a layout for MOSS-Image, sentences for the rest. Slower than the others: about 15 seconds for sentences or tags, a minute for a layout.</string>
     <string name="tagger_about">Writes Danbooru tags from a picture, for anime models: the picture button on a prompt, Tags. SmilingWolf\'s WD tagger, run offline on the CPU.</string>
     <string name="tag_heavier">Heavier: weight +0.1</string>
     <string name="tag_lighter">Lighter: weight −0.1</string>
@@ -985,6 +989,7 @@
     <!-- Data-backed labels shown by model tools and the node palette. -->
     <string name="describe_promptgen_label">Describe (Florence-2 PromptGen)</string>
     <string name="describe_wd_label">Tags (WD ViT v3)</string>
+    <string name="describe_vlm_label">Smart describe (Qwen3-VL 4B)</string>
     <string name="models_installed_named">installed %1$s</string>
     <string name="models_deleted_named">deleted %1$s</string>
     <string name="upscaler_anime_label">Anime 4x</string>
@@ -1493,7 +1498,9 @@
     <string name="heat_title">Heat</string>
     <string name="heat_note">A video render keeps the phone\'s processors busy for minutes and the phone gets hot. The chip protects itself; the battery does not, and heat above about 45 °C wears it out faster. The run log warns when the battery is warm.</string>
     <string name="heat_pause">Pause video when the battery is hot</string>
-    <string name="heat_pause_hint">A video render waits between steps when the battery reaches 45 °C and carries on when it cools to 40 °C. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds.</string>
+    <string name="heat_pause_hint">A video render waits between steps when the battery reaches the temperature below and carries on when it is 5 °C cooler. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds.</string>
+    <string name="heat_pause_at">Pause at</string>
+    <string name="heat_pause_at_hint">40 °C is kindest to the battery and pauses most; 50 °C pauses least, and above 45 °C a battery wears faster.</string>
     <string name="gpu_title">GPU</string>
     <string name="gpu_note">For phones whose NPU cannot run the DiT models, and for anyone who wants to try the graphics chip.</string>
     <string name="dit_v69_npu">Try the NPU for DiT models (test)</string>

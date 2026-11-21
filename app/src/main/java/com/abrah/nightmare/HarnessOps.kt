@@ -332,6 +332,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             // ⭐ The prompt's describe button, headless and timed (docs/FLORENCE.md).
             // `--es arg "short"` / `"detailed|/sdcard/Download/x.jpg"`; no path = the newest saved picture.
             "describe_install" -> describeInstall(arg)
+            "describe_vlm_exit" -> { com.abrah.nightmare.vlm.VisionDescriber.trim(); say("describe_vlm_exit: sent") }
             "describe" -> describeProbe(arg)
             else -> say("unknown intent op \"$op\"", bad = true)
         }
@@ -3835,7 +3836,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         val which = when (arg?.trim()) {
             "sentences" -> listOf(ImageCaption)
             "tags" -> listOf(ImageTagger)
-            else -> DescribeMode.models
+            // ⚠ Named only: 5.1 GB is never part of "all".
+            "vlm" -> listOf(com.abrah.nightmare.vlm.VisionDescriber)
+            else -> listOf(ImageCaption, ImageTagger)
         }
         for (c in which) {
             say("describe_install: ${c.label}, ${c.bytes} B")
@@ -3852,12 +3855,18 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
 
     /**
      * ⭐ The describe button's own call, timed: twice on one picture (cold, warm),
-     * with the peak RSS. `short` / `detailed` / `tags`, then `|<path>`.
+     * with the peak RSS. `short` / `detailed` / `tags` / `vlm_prose` / `vlm_tags` / `vlm_layout`, then `|<path>`,
+     * then for the vision model `|<devices>` ("none" = the CPU alone, "HTP0", "HTP0:0,HTP0:1"), `|cpu` to run its
+     * vision encoder on the CPU, and `|<model.gguf>` (a path) in place of the installed weights (a quant A/B).
+     * ⚠ The `:vlm` process reads the devices once: `describe_vlm_exit` between two.
      */
     private suspend fun describeProbe(arg: String?) {
         val parts = arg.orEmpty().split("|")
         val mode = DescribeMode.entries.firstOrNull { it.name.equals(parts[0].trim(), ignoreCase = true) } ?: DescribeMode.SHORT
         val path = parts.getOrNull(1)?.takeIf { it.isNotBlank() }
+        com.abrah.nightmare.vlm.VisionDescriber.devicesOverride = parts.getOrNull(2)?.trim()?.takeIf { it.isNotEmpty() }
+        com.abrah.nightmare.vlm.VisionDescriber.visionOnCpu = parts.getOrNull(3)?.trim() == "cpu"
+        com.abrah.nightmare.vlm.VisionDescriber.modelOverride = parts.getOrNull(4)?.trim()?.takeIf { it.isNotEmpty() }
         val photo = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             if (path != null) BitmapFactory.decodeFile(path)
             else newestSavedImage()?.let { AddObjects.load(ctx, it) }
@@ -3867,11 +3876,7 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             for (k in 0 until 2) {
                 val t = System.nanoTime()
-                val text = when (mode) {
-                    DescribeMode.TAGS -> ImageTagger.tags(ctx, photo)
-                    DescribeMode.SHORT -> ImageCaption.caption(ctx, photo, ImageCaption.Length.SHORT)
-                    DescribeMode.DETAILED -> ImageCaption.caption(ctx, photo, ImageCaption.Length.DETAILED)
-                }
+                val text = mode.describe(ctx, photo)
                 val hwm = java.io.File("/proc/self/status").readLines().firstOrNull { it.startsWith("VmHWM") }
                 say("  ${mode.name.lowercase()} ${if (k == 0) "cold" else "warm"} ${(System.nanoTime() - t) / 1_000_000} ms ${hwm.orEmpty()}")
                 say("  \"$text\"")
@@ -5525,6 +5530,16 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             k == "dit_spectrum" && v != null -> {
                 Prefs.setLowRam(ctx, Prefs.KEY_DIT_SPECTRUM, v == "1")
                 say("spillfill: dit spectrum = ${Prefs.ditSpectrum}")
+            }
+            // ⭐ Settings, Heat: the pause, so a headless A/B runs without waits (the user, 2026-11-21) and a script
+            // restores the person's own setting after. `heat_pause_at=40|45|50` moves the temperature.
+            k == "heat_pause" && v != null -> {
+                Prefs.setLowRam(ctx, Prefs.KEY_HEAT_PAUSE, v == "1")
+                say("spillfill: heat pause = ${Prefs.heatPause} at ${Prefs.heatPauseAt} °C")
+            }
+            k == "heat_pause_at" && v != null -> {
+                Prefs.setHeatPauseAt(ctx, v.toIntOrNull() ?: Prefs.HEAT_PAUSE_DEFAULT)
+                say("spillfill: heat pause = ${Prefs.heatPause} at ${Prefs.heatPauseAt} °C")
             }
             v != null -> {
                 SpillFill.setForTest(ctx, k, v.toLongOrNull() ?: 0L)

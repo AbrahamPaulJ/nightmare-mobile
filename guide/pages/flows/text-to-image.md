@@ -34,6 +34,8 @@ The model families read prompts differently:
 - No words for it? The **picture button** on the prompt box describes a picture you already
   have, either a render on the canvas or a photo from your gallery, as sentences or, for anime
   models, Danbooru tags, and writes that into the prompt ([Prompt node](../reference/nodes.md#prompt)).
+  Its **Qwen3-VL** chip (phones with 10 GB of RAM or more) uses a vision model that also reads
+  what is where, and for MOSS-Image writes the layout of boxes the model draws to.
 
 ## The generator's settings
 

@@ -208,6 +208,12 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="keeps a loaded model resident while the app is backgrounded" />
         </service>
+        <!-- VlmService: picture to prompt with a vision model (GitHub #120), in a process of its own so it
+             gets its own NPU library path and its 5 GB end with it. Bound by this app only. -->
+        <service
+            android:name=".vlm.VlmService"
+            android:exported="false"
+            android:process=":vlm" />
         <!-- ApiService: the local API (docs/AGENT-API.md), only while Settings → API is on.
              Its notification says it is listening and carries Stop. Not exported: the
              network is reached through its socket, never through an intent. -->

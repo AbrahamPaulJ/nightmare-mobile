@@ -13,14 +13,19 @@ import kotlinx.coroutines.launch
  * damage phones"; a tester, Saved #7354: lithium cells wear fast above ~45 °C while the chip itself is fine at 100).
  * A video render keeps the NPU busy for minutes, so the run log says the battery's temperature when it is already
  * warm, and says so again when the clip pushed it high. With [Prefs.heatPause] on, the render WAITS between steps
- * from [PAUSE_AT] until it cools to [RESUME_AT] (backend 051's `/pause`). An app cannot set clocks; waiting is what
+ * from [Prefs.heatPauseAt] until it cools 5 °C lower ([resumeAt]; backend 051's `/pause`). An app cannot set clocks; waiting is what
  * it can do. The battery's own sensor (`ACTION_BATTERY_CHANGED`, no permission), the one the tester asked for.
  */
 object BatteryHeat {
 
     const val WARN_AT = 40.0
+    /** ⭐ The default pause; Settings moves it to 40 or 50 ([Prefs.heatPauseAt]). */
     const val PAUSE_AT = 45.0
-    const val RESUME_AT = 40.0
+
+    /** It carries on this much cooler, a gap so it never flaps. */
+    const val RESUME_GAP = 5.0
+
+    fun resumeAt(pauseAt: Double) = pauseAt - RESUME_GAP
     private const val POLL_MS = 10_000L
 
     /** The battery's temperature in °C, or null where the phone does not say. */
@@ -31,7 +36,8 @@ object BatteryHeat {
     }.getOrNull()
 
     /** ⚠ Pure: whether to be paused at [c] °C, given [paused] now (a gap between the two edges, so it never flaps). */
-    fun nextPaused(paused: Boolean, c: Double): Boolean = if (paused) c > RESUME_AT else c >= PAUSE_AT
+    fun nextPaused(paused: Boolean, c: Double, pauseAt: Double = PAUSE_AT): Boolean =
+        if (paused) c > resumeAt(pauseAt) else c >= pauseAt
 
     fun format(c: Double): String = String.format(java.util.Locale.ROOT, "%.0f", c)
 
@@ -47,8 +53,8 @@ object BatteryHeat {
     }
 
     /** ⭐ The run log's warning after a render that took the battery to [PAUSE_AT] ([peak] the hottest reading). */
-    fun warnIfHot(peak: Double?, ctx: NodeCtx) {
-        if (peak != null && peak >= PAUSE_AT) {
+    fun warnIfHot(peak: Double?, ctx: NodeCtx, pauseAt: Double = PAUSE_AT) {
+        if (peak != null && peak >= pauseAt) {
             ctx.warn(ctx.text(R.string.run_heat_end,
                 "The battery reached %1\$s °C during this clip. Let the phone cool before the next one",
                 format(peak)))
@@ -66,6 +72,7 @@ object BatteryHeat {
         pause: Boolean,
         ctx: NodeCtx,
         setPaused: suspend (Boolean) -> Unit,
+        pauseAt: Double = Prefs.heatPauseAt.toDouble(),
         render: suspend () -> T,
     ): T {
         val start = warnIfWarm(context, ctx)
@@ -79,11 +86,11 @@ object BatteryHeat {
                         val c = celsius(context) ?: continue
                         peak = maxOf(peak, c)
                         if (!pause) continue
-                        val next = nextPaused(paused, c)
+                        val next = nextPaused(paused, c, pauseAt)
                         if (next && !paused) {
                             ctx.warn(ctx.text(R.string.run_heat_paused,
                                 "Paused: the battery is at %1\$s °C. The clip carries on when it cools to %2\$s °C",
-                                format(c), format(RESUME_AT)))
+                                format(c), format(resumeAt(pauseAt))))
                         } else if (!next && paused) {
                             ctx.say("  battery at ${format(c)} °C: carrying on")
                         }
@@ -99,7 +106,7 @@ object BatteryHeat {
             }
         } finally {
             if (paused) runCatching { setPaused(false) }
-            warnIfHot(peak, ctx)
+            warnIfHot(peak, ctx, pauseAt)
         }
     }
 }

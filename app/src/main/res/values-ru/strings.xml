@@ -356,6 +356,9 @@
     <string name="describe_tags">Теги</string>
     <string name="describe_tags_hint">Теги Danbooru, для аниме-моделей вроде Illustrious, Anima и Pony.</string>
     <string name="describe_words_hint">Предложения, для фото-моделей, SDXL и FLUX.2.</string>
+    <string name="describe_vlm_form">Как писать</string>
+    <string name="describe_vlm_prose">Предложения</string>
+    <string name="describe_vlm_hint">Читает картинку моделью зрения прямо на телефоне и пишет так, как читает подключённая модель: теги для аниме-моделей, разметку для MOSS-Image, предложения для остальных. Медленнее остальных: около 15 секунд на предложения или теги, минута на разметку.</string>
     <string name="tagger_about">Пишет теги Danbooru по картинке, для аниме-моделей: кнопка с картинкой у промпта, «Теги». WD tagger от SmilingWolf, без интернета, на процессоре.</string>
     <string name="tag_heavier">Сильнее: вес +0,1</string>
     <string name="tag_lighter">Слабее: вес −0,1</string>
@@ -977,6 +980,7 @@
     <!-- Метки инструментов моделей и палитры узлов. -->
     <string name="describe_promptgen_label">Описание (Florence-2 PromptGen)</string>
     <string name="describe_wd_label">Теги (WD ViT v3)</string>
+    <string name="describe_vlm_label">Умное описание (Qwen3-VL 4B)</string>
     <string name="models_installed_named">установлено: %1$s</string>
     <string name="models_deleted_named">удалено: %1$s</string>
     <string name="upscaler_anime_label">Аниме 4x</string>
@@ -1489,7 +1493,9 @@
     <string name="heat_title">Нагрев</string>
     <string name="heat_note">Видео загружает процессоры телефона на минуты, и телефон нагревается. Чип защищает себя сам, аккумулятор нет: нагрев выше примерно 45 °C изнашивает его быстрее. Журнал запуска предупреждает, когда аккумулятор тёплый.</string>
     <string name="heat_pause">Пауза видео при горячем аккумуляторе</string>
-    <string name="heat_pause_hint">Видео ждёт между шагами, когда аккумулятор нагревается до 45 °C, и продолжает, когда он остывает до 40 °C. В тёплой комнате дольше, зато бережнее к аккумулятору. Не для Neodragon: его ролики занимают секунды.</string>
+    <string name="heat_pause_hint">Видео ждёт между шагами, когда аккумулятор нагревается до температуры ниже, и продолжает, когда он остынет на 5 °C. В тёплой комнате дольше, зато бережнее к аккумулятору. Не для Neodragon: его ролики занимают секунды.</string>
+    <string name="heat_pause_at">Пауза при</string>
+    <string name="heat_pause_at_hint">40 °C бережнее всего к аккумулятору, но пауз больше; при 50 °C пауз меньше всего, а выше 45 °C аккумулятор изнашивается быстрее.</string>
     <string name="gpu_title">GPU</string>
     <string name="gpu_note">Для телефонов, чей NPU не запускает модели DiT, и для всех, кто хочет попробовать графический чип.</string>
     <string name="dit_v69_npu">Попробовать NPU для моделей DiT (тест)</string>

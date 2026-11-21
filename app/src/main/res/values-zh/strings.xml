@@ -353,6 +353,9 @@
     <string name="describe_tags">标签</string>
     <string name="describe_tags_hint">Danbooru 标签，适用于 Illustrious、Anima、Pony 等动漫模型。</string>
     <string name="describe_words_hint">句子，适用于写实模型、SDXL 和 FLUX.2。</string>
+    <string name="describe_vlm_form">写成</string>
+    <string name="describe_vlm_prose">句子</string>
+    <string name="describe_vlm_hint">用手机上的视觉模型读图，并按所连模型的读法来写：动漫模型写标签，MOSS-Image 写布局，其余写句子。比其他方式慢：句子或标签约 15 秒，布局约一分钟。</string>
     <string name="tagger_about">根据图片写 Danbooru 标签，适用于动漫模型：提示词上的图片按钮，选“标签”。SmilingWolf 的 WD tagger，在 CPU 上离线运行。</string>
     <string name="tag_heavier">加重：权重 +0.1</string>
     <string name="tag_lighter">减轻：权重 −0.1</string>
@@ -956,6 +959,7 @@
     <!-- 模型工具和节点面板中的数据标签。 -->
     <string name="describe_promptgen_label">描述图片（Florence-2 PromptGen）</string>
     <string name="describe_wd_label">生成标签（WD ViT v3）</string>
+    <string name="describe_vlm_label">智能描述（Qwen3-VL 4B）</string>
     <string name="models_installed_named">已安装 %1$s</string>
     <string name="models_deleted_named">已删除 %1$s</string>
     <string name="upscaler_anime_label">动漫 4x</string>
@@ -1462,7 +1466,9 @@
     <string name="heat_title">发热</string>
     <string name="heat_note">生成视频会让手机处理器满载数分钟，手机会发热。芯片会自我保护，电池不会：超过约 45 °C 会加快电池老化。电池温度偏高时，运行日志会提醒。</string>
     <string name="heat_pause">电池过热时暂停视频</string>
-    <string name="heat_pause_hint">电池达到 45 °C 时，视频在步骤之间等待，降到 40 °C 后继续。在温暖的房间里会更慢，但更爱护电池。不适用于 Neodragon，它的视频只需几秒。</string>
+    <string name="heat_pause_hint">电池达到下方设定的温度时，视频在步骤之间等待，降低 5 °C 后继续。在温暖的房间里会更慢，但更爱护电池。不适用于 Neodragon，它的视频只需几秒。</string>
+    <string name="heat_pause_at">暂停温度</string>
+    <string name="heat_pause_at_hint">40 °C 最爱护电池，但暂停最多；50 °C 暂停最少，而超过 45 °C 电池损耗会加快。</string>
     <string name="gpu_title">GPU</string>
     <string name="gpu_note">适用于 NPU 无法运行 DiT 模型的手机，以及想试用显卡芯片的任何人。</string>
     <string name="dit_v69_npu">尝试用 NPU 运行 DiT 模型（测试）</string>

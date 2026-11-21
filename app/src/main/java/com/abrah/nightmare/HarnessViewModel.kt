@@ -3957,13 +3957,7 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                     val photo = ops.images.get(picture) ?: com.abrah.nightmare.AddObjects.load(ctx, picture)
                         ?: throw java.io.IOException(ctx.getString(com.abrah.nightmare.R.string.describe_unreadable))
-                    val text = when (mode) {
-                        com.abrah.nightmare.DescribeMode.TAGS -> com.abrah.nightmare.ImageTagger.tags(ctx, photo)
-                        com.abrah.nightmare.DescribeMode.SHORT ->
-                            com.abrah.nightmare.ImageCaption.caption(ctx, photo, com.abrah.nightmare.ImageCaption.Length.SHORT)
-                        com.abrah.nightmare.DescribeMode.DETAILED ->
-                            com.abrah.nightmare.ImageCaption.caption(ctx, photo, com.abrah.nightmare.ImageCaption.Length.DETAILED)
-                    }
+                    val text = mode.describe(ctx, photo)
                     text ?: throw java.io.IOException(mode.model.label)
                 }
             }

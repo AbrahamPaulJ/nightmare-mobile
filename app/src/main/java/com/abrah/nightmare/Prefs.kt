@@ -76,6 +76,7 @@ object Prefs {
         postOpen = p.getBoolean(KEY_POST_OPEN, false)
         wanStream = p.getBoolean(KEY_WAN_STREAM, false)
         heatPause = p.getBoolean(KEY_HEAT_PAUSE, false)
+        heatPauseAt = p.getInt(KEY_HEAT_PAUSE_AT, HEAT_PAUSE_DEFAULT).takeIf { it in HEAT_PAUSE_STOPS } ?: HEAT_PAUSE_DEFAULT
         runSound = p.getBoolean(KEY_RUN_SOUND, false)
         chipTemps = p.getBoolean(KEY_CHIP_TEMPS, false)
         ditGpu = p.getBoolean(KEY_DIT_GPU, ditGpuDefault())
@@ -346,6 +347,23 @@ object Prefs {
     /** ⚠ [KEY_HEAT_PAUSE] held in memory: a node's run reads it with no Context. Loaded by [load], set by [setLowRam]. */
     @Volatile var heatPause: Boolean = false
         private set
+
+    /**
+     * ⭐ The battery temperature the pause starts at: 40, 45 or 50 °C, 45 by default; it carries on 5 °C lower
+     * ([BatteryHeat.resumeAt]). The user's call, 2026-11-21: a slider with those three stops.
+     */
+    const val KEY_HEAT_PAUSE_AT = "heat_pause_at"
+    val HEAT_PAUSE_STOPS = listOf(40, 45, 50)
+    const val HEAT_PAUSE_DEFAULT = 45
+
+    @Volatile var heatPauseAt: Int = HEAT_PAUSE_DEFAULT
+        private set
+
+    fun setHeatPauseAt(context: Context, celsius: Int) {
+        val c = HEAT_PAUSE_STOPS.minByOrNull { kotlin.math.abs(it - celsius) } ?: HEAT_PAUSE_DEFAULT
+        heatPauseAt = c
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putInt(KEY_HEAT_PAUSE_AT, c).apply()
+    }
 
     /** ⭐ A sound (and a notification out of sight) when a run of 15 s or more ends ([RunAlert], GitHub #79): opt-in. */
     const val KEY_RUN_SOUND = "run_sound"

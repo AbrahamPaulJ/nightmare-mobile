@@ -38,7 +38,7 @@ interface DescribeModel {
     fun trim()
 }
 
-/** ⭐ The files of one [DescribeModel]: a pinned Hugging Face base, repo path → exact size. */
+/** ⭐ The files of one [DescribeModel]: a pinned Hugging Face base, repo path (or a whole pinned URL) → exact size. */
 internal class ModelFiles(val dirName: String, val base: String, val files: List<Pair<String, Long>>) {
     val bytes: Long = files.sumOf { it.second }
 
@@ -58,7 +58,7 @@ internal class ModelFiles(val dirName: String, val base: String, val files: List
             if (target.length() != size) {
                 val part = File(target.parentFile, "${target.name}.part")
                 val base0 = before
-                UpscalerCatalog.download(base + path, part, size, { p ->
+                UpscalerCatalog.download(if (path.startsWith("https://")) path else base + path, part, size, { p ->
                     onProgress(ModelInstaller.Progress(p.phase, base0 + p.done, bytes))
                 }, isCancelled)
                 if (part.length() != size) {
@@ -543,12 +543,48 @@ object ImageTagger : DescribeModel {
  * ⭐⭐ What the describe button can write, and which model writes it — the dialog's
  * chips (`docs/FLORENCE.md` §1).
  */
-enum class DescribeMode(val model: DescribeModel) {
-    SHORT(ImageCaption), DETAILED(ImageCaption), TAGS(ImageTagger);
+enum class DescribeMode(val model: DescribeModel, val vision: com.abrah.nightmare.vlm.VisionPrompts.Style? = null) {
+    SHORT(ImageCaption), DETAILED(ImageCaption), TAGS(ImageTagger),
+
+    /**
+     * ⭐ The vision model's three (GitHub #120): one chip in the dialog, "Qwen3-VL", writing the way the wired
+     * checkpoint reads ([visionFor]), and a second row to choose another.
+     */
+    VLM_PROSE(com.abrah.nightmare.vlm.VisionDescriber, com.abrah.nightmare.vlm.VisionPrompts.Style.PROSE),
+    VLM_TAGS(com.abrah.nightmare.vlm.VisionDescriber, com.abrah.nightmare.vlm.VisionPrompts.Style.TAGS),
+    VLM_LAYOUT(com.abrah.nightmare.vlm.VisionDescriber, com.abrah.nightmare.vlm.VisionPrompts.Style.LAYOUT);
+
+    /** ⭐ The text for [photo], or null. Blocking: the describe button and the harness both call it off the main thread. */
+    fun describe(context: Context, photo: Bitmap): String? = when (this) {
+        TAGS -> ImageTagger.tags(context, photo)
+        SHORT -> ImageCaption.caption(context, photo, ImageCaption.Length.SHORT)
+        DETAILED -> ImageCaption.caption(context, photo, ImageCaption.Length.DETAILED)
+        VLM_PROSE, VLM_TAGS, VLM_LAYOUT -> com.abrah.nightmare.vlm.VisionDescriber.describe(context, photo, vision!!)
+    }
 
     companion object {
-        /** Every model, once — the Tools rows and [PictureModels]. */
-        val models: List<DescribeModel> = listOf(ImageCaption, ImageTagger)
+        /**
+         * Every model, once — the Tools rows and [PictureModels]. ⚠ The vision model only where it runs
+         * ([com.abrah.nightmare.vlm.VisionDescriber.offered]): 5 GB that an 8 GB phone cannot hold is no offer.
+         */
+        val models: List<DescribeModel> by lazy {
+            listOfNotNull(ImageCaption, ImageTagger, com.abrah.nightmare.vlm.VisionDescriber.takeIf { it.offered })
+        }
+
+        /** ⭐ The vision chip's style for this prompt: tags, a MOSS layout, or sentences, by the checkpoint it feeds. */
+        fun visionFor(graph: Graph, promptNode: String): DescribeMode {
+            val specs = wiredSpecs(graph, promptNode)
+            return when {
+                specs.any { it.family == Family.MOSS } -> VLM_LAYOUT
+                specs.any { readsTags(it) } -> VLM_TAGS
+                else -> VLM_PROSE
+            }
+        }
+
+        private fun wiredSpecs(graph: Graph, promptNode: String): List<ModelSpec> = graph.nodes
+            .filter { n -> n.inputs.values.any { it.node == promptNode } }
+            .mapNotNull { ModelCatalog.byId(it.params["model"].orEmpty()) }
+            .ifEmpty { listOf(SelectedModel.spec) }
 
         /**
          * ⭐⭐ The chip the dialog opens on: TAGS when the prompt feeds a checkpoint
@@ -557,11 +593,11 @@ enum class DescribeMode(val model: DescribeModel) {
          * one ([PromptTokens.budgetFor]'s rule).
          */
         fun defaultFor(graph: Graph, promptNode: String): DescribeMode {
-            val specs = graph.nodes
-                .filter { n -> n.inputs.values.any { it.node == promptNode } }
-                .mapNotNull { ModelCatalog.byId(it.params["model"].orEmpty()) }
-                .ifEmpty { listOf(SelectedModel.spec) }
-            return if (specs.any { readsTags(it) }) TAGS else DETAILED
+            // ⭐ The vision model once it is downloaded: 5 GB fetched on purpose is the one the person wants.
+            if (com.abrah.nightmare.vlm.VisionDescriber.installed && com.abrah.nightmare.vlm.VisionDescriber.offered) {
+                return visionFor(graph, promptNode)
+            }
+            return if (wiredSpecs(graph, promptNode).any { readsTags(it) }) TAGS else DETAILED
         }
 
         /**

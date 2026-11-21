@@ -161,11 +161,12 @@ model stays loaded. A render with a LoRA loads it again each time.
 A video render keeps the phone's processors busy for minutes, and the phone gets hot. The chip
 protects itself; the battery does not, and heat above about 45 °C wears it out faster. The run
 log warns when the battery is already warm (40 °C) before a clip, and again when a clip took it
-to 45 °C. Keep the phone off the charger and out of the sun while it renders.
+to the pause temperature (45 °C unless you move it). Keep the phone off the charger and out of the sun while it renders.
 
 | switch | default | what it does |
 |---|---|---|
-| **Pause video when the battery is hot** | off | A video render waits between steps when the battery reaches 45 °C and carries on when it cools to 40 °C. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds |
+| **Pause video when the battery is hot** | off | A video render waits between steps when the battery reaches the **Pause at** temperature and carries on when it is 5 °C cooler. Slower in a warm room, easier on the battery. Not for Neodragon, whose clips take seconds |
+| **Pause at** (with the pause on) | 45 °C | 40, 45 or 50 °C. 40 °C is kindest to the battery and pauses most; 50 °C pauses least, and above 45 °C a battery wears faster |
 | **Show the chip's temperatures** | off | The RAM line (run bar and sidebar) shows the CPU, GPU and NPU, each the hottest of its sensors, instead of the battery's temperature. Handy with a phone cooler, which keeps the battery cool while the chip works. Only offered where the phone lets apps read these sensors. The heat warnings above still follow the battery |
 
 ### When a run ends

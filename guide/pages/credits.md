@@ -73,6 +73,8 @@ the README's [What we built](https://github.com/AbrahamPaulJ/nightmare-mobile#wh
 | [SegFormer-B2 on ATR](https://huggingface.co/mattmdjaga/segformer_b2_clothes) | mattmdjaga | MIT | auto mask by name |
 | [Florence-2 PromptGen v2.0](https://huggingface.co/MiaoshouAI/Florence-2-base-PromptGen-v2.0) | MiaoshouAI, on Microsoft's [Florence-2](https://huggingface.co/microsoft/Florence-2-base-ft) | MIT | describe: sentences, [as ONNX](https://huggingface.co/AbrahamPJ/florence2-promptgen-onnx) on onnx-community's graphs |
 | [WD ViT tagger v3](https://huggingface.co/SmilingWolf/wd-vit-tagger-v3) | SmilingWolf | Apache 2.0 | describe: tags |
+| [Qwen3-VL 4B Instruct Unredacted MAX](https://huggingface.co/prithivMLmods/Qwen3-VL-4B-Instruct-Unredacted-MAX-GGUF) | Qwen team; abliterated by prithivMLmods | Apache 2.0 | smart describe (Qwen3-VL): [our Q4_0 GGUF](https://huggingface.co/AbrahamPJ/qwen3-vl-4b-unredacted-max-q4_0-gguf) of their F16, their q8_0 vision projector |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | ggml authors | MIT | runs smart describe, on the NPU |
 | [Firefox Translations](https://github.com/mozilla/firefox-translations-models) (ru, zh → en) | Mozilla | MPL-2.0 | prompt translation |
 | [T5 tokenizer](https://huggingface.co/google-t5/t5-base) (`tokenizer.json`) | Google | Apache 2.0 | counting Anima prompt tokens (n/512) |
 | [Danbooru tag list](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete) (`danbooru.csv`) | Dominik Reh (a1111-sd-webui-tagcomplete) | MIT | tag autocomplete, [hosted here](https://huggingface.co/AbrahamPJ/nightmare-tags) |

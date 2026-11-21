@@ -368,6 +368,9 @@
 <string name="describe_tags">タグ</string>
 <string name="describe_tags_hint">Illustrious、Anima、Pony などのアニメモデル向けの Danbooru タグです。</string>
 <string name="describe_words_hint">写真モデル、SDXL、FLUX.2 向けの文章形式です。</string>
+<string name="describe_vlm_form">書き方</string>
+<string name="describe_vlm_prose">文章</string>
+<string name="describe_vlm_hint">スマホ上のビジョンモデルで画像を読み、つないだモデルが読む形で書きます。アニメモデルにはタグ、MOSS-Image にはレイアウト、それ以外には文章。ほかより遅く、文章やタグは約15秒、レイアウトは約1分かかります。</string>
 <string name="tagger_about">アニメモデル向けに画像から Danbooru タグを生成します：プロンプトの画像ボタンから「タグ」を使います。SmilingWolf の WD tagger を CPU でオフライン実行します。</string>
 <string name="tag_heavier">強く：重み +0.1</string>
 <string name="tag_lighter">弱く：重み −0.1</string>
@@ -970,6 +973,7 @@
 <!-- Data-backed labels shown by model tools and the node palette. -->
 <string name="describe_promptgen_label">説明 (Florence-2 PromptGen)</string>
 <string name="describe_wd_label">タグ (WD ViT v3)</string>
+<string name="describe_vlm_label">スマート記述 (Qwen3-VL 4B)</string>
 <string name="models_installed_named">%1$s をインストールしました</string>
 <string name="models_deleted_named">%1$s を削除しました</string>
 <string name="upscaler_anime_label">アニメ 4x</string>
@@ -1483,7 +1487,9 @@ Nightmare は、このモデルを使用する箇所に \"Powered by MiniMax-H3-
 <string name="heat_title">発熱</string>
 <string name="heat_note">動画の生成ではスマホのプロセッサが数分間忙しく働き、端末が熱くなります。チップは自身を保護しますが、バッテリーはそうではなく、約 45 °C を超える熱はバッテリーの劣化を早めます。バッテリーが温かいと、実行ログで警告されます。</string>
 <string name="heat_pause">バッテリーが熱いときは動画を一時停止</string>
-<string name="heat_pause_hint">動画の生成は、バッテリーが 45 °C に達するとステップの合間に待機し、40 °C まで冷めると再開します。暖かい部屋では遅くなりますが、バッテリーには優しくなります。クリップが数秒で終わる Neodragon は対象外です。</string>
+<string name="heat_pause_hint">動画の生成は、バッテリーが下の温度に達するとステップの合間に待機し、5 °C 冷めると再開します。暖かい部屋では遅くなりますが、バッテリーには優しくなります。クリップが数秒で終わる Neodragon は対象外です。</string>
+<string name="heat_pause_at">一時停止の温度</string>
+<string name="heat_pause_at_hint">40 °C はバッテリーに最も優しく、停止は最も多くなります。50 °C は停止が最も少なく、45 °C を超えるとバッテリーの劣化が早まります。</string>
 <string name="gpu_title">GPU</string>
 <string name="gpu_note">NPU で DiT モデルを実行できない端末向け、およびグラフィックスチップを試したい方向けです。</string>
 <string name="dit_v69_npu">DiT モデルで NPU を試す (テスト)</string>
