@@ -681,6 +681,7 @@ fun HarnessScreen(
             onPickMask = vm::pickMask,
             onAutoSubject = vm::autoSubject,
             onTranslate = vm::translatePrompt,
+            onEnhance = if (com.abrah.nightmare.vlm.VisionDescriber.offered) vm::enhancePrompt else null,
             onDescribe = vm::describePicture,
             onCancelRun = vm::requestCancelRun,
             onSetResolution = vm::setNodeResolution,

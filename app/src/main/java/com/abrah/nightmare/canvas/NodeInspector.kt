@@ -368,6 +368,8 @@ fun NodeInspector(
      * draws no button — a preview has no engine.
      */
     onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
+    /** ⭐⭐ The prompt enhancer (`docs/FLORENCE.md` §7): Qwen3-VL rewrites the prompt; done(null) when it could not. */
+    onEnhance: ((node: String, param: String, seed: Int, done: (String?) -> Unit) -> Unit)? = null,
     /**
      * ⭐⭐ Describe a picture into words for the prompt (`docs/FLORENCE.md`) —
      * `HarnessViewModel.describePicture`: a canvas image id or a photo URI and a
@@ -752,6 +754,7 @@ fun NodeInspector(
             onPickMask = onPickMask,
             onAutoSubject = onAutoSubject,
             onTranslate = onTranslate,
+            onEnhance = onEnhance,
             onDescribe = onDescribe,
             parserInstalled = parserInstalled,
             parserRow = parserRow,
@@ -1555,6 +1558,8 @@ internal fun NodeInspectorBody(
      * draws no button — a preview has no engine.
      */
     onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
+    /** ⭐⭐ The prompt enhancer (`docs/FLORENCE.md` §7): Qwen3-VL rewrites the prompt; done(null) when it could not. */
+    onEnhance: ((node: String, param: String, seed: Int, done: (String?) -> Unit) -> Unit)? = null,
     /**
      * ⭐⭐ Describe a picture into words for the prompt (`docs/FLORENCE.md`) —
      * `HarnessViewModel.describePicture`: a canvas image id or a photo URI and a
@@ -3453,6 +3458,17 @@ internal fun NodeInspectorBody(
                         },
                     )
                 }
+                // ⭐ Enhance (`docs/FLORENCE.md` §7), then Undo in the same slot, Translate's shape; the positive prompt only.
+                if (name == "prompt" && onEnhance != null && current.isNotBlank()) {
+                    EnhanceToggle(
+                        prompt = current,
+                        onEnhance = { seed, done -> onEnhance(nodeId, name, seed, done) },
+                        onWrite = { text ->
+                            onSetParam(nodeId, name, text)
+                            show(text)
+                        },
+                    )
+                }
                 val undo = translated[w.name]?.takeIf { it.second == current }
                 val canTranslate = onTranslate != null && undo == null &&
                     remember(current) { com.abrah.nightmare.PromptTranslate.detect(current) } != null
@@ -4728,6 +4744,96 @@ private fun TranslateToggle(undo: Boolean, onClick: () -> Unit, modifier: Modifi
             )
         }
     }
+}
+
+/**
+ * ⭐⭐ The prompt enhancer's button (`docs/FLORENCE.md` §7): Qwen3-VL rewrites the prompt into what the wired checkpoint
+ * reads, the answer streaming in a dialog as the describe button's does; the result is SHOWN with Use it, Try again (a
+ * new seed) and Cancel, never written unread. Once used, the slot is Undo while the box still holds the result.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EnhanceToggle(prompt: String, onEnhance: (seed: Int, done: (String?) -> Unit) -> Unit, onWrite: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    var offer by remember { mutableStateOf<String?>(null) }
+    // (the text before, the text written): Undo while the box holds the second.
+    var undo by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var ticket by remember { mutableStateOf(0) }
+    val latest = androidx.compose.runtime.rememberUpdatedState(prompt)
+    val start: () -> Unit = {
+        offer = null
+        open = true
+        val mine = ++ticket
+        onEnhance(kotlin.random.Random.nextInt(1, Int.MAX_VALUE)) { text ->
+            if (mine != ticket) return@onEnhance
+            if (text.isNullOrBlank()) open = false else offer = text
+        }
+    }
+    val close: () -> Unit = { open = false; offer = null; ticket += 1 }
+    val undoing = undo?.takeIf { it.second == prompt }
+    Surface(
+        color = androidx.compose.material3.BottomSheetDefaults.ContainerColor,
+        shape = CircleShape,
+        modifier = Modifier.padding(end = 8.dp).offset(y = (-8).dp),
+    ) {
+        IconButton(
+            onClick = {
+                if (undoing != null) { onWrite(undoing.first); undo = null } else start()
+            },
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                if (undoing != null) com.abrah.nightmare.ui.UndoIcon else com.abrah.nightmare.ui.SparkleIcon,
+                contentDescription = stringResource(if (undoing != null) R.string.enhance_undo else R.string.enhance_action),
+                tint = if (undoing != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+    if (!open) return
+    val text = offer
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(stringResource(R.string.enhance_action)) },
+        text = {
+            Column(
+                Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (text == null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp))
+                        Text(stringResource(R.string.enhance_working), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    val live by com.abrah.nightmare.vlm.VisionDescriber.live.collectAsState()
+                    if (live.isNotBlank()) {
+                        Text(live.trim(), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    Text(text, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        },
+        confirmButton = {
+            if (text != null) {
+                com.abrah.nightmare.ui.DialogButtonStack {
+                    com.abrah.nightmare.ui.StudioButton(
+                        onClick = { undo = latest.value to text; onWrite(text); close() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.enhance_use)) }
+                    StudioOutlinedButton(onClick = start, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.enhance_again))
+                    }
+                    StudioOutlinedButton(onClick = close, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            }
+        },
+        dismissButton = if (text == null) {
+            { StudioOutlinedButton(onClick = close) { Text(stringResource(R.string.cancel)) } }
+        } else null,
+    )
 }
 
 /**

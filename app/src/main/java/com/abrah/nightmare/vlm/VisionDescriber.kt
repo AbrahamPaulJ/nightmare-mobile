@@ -151,11 +151,26 @@ object VisionDescriber : DescribeModel {
      */
     fun describe(context: Context, photo: Bitmap, style: VisionPrompts.Style, onPart: (String) -> Unit = {}): String? {
         val ctx = context.applicationContext
-        appContext = ctx
-        freeMemoryFor(ctx)
-        val ask = VisionPrompts.ask(style)
         val rgbFile = File(ctx.cacheDir, "vlm-in.rgb")
         val (w, h) = writeRgb(photo, rgbFile)
+        val raw = try {
+            run(ctx, VisionPrompts.ask(style), rgbFile, w, h, onPart)
+        } finally {
+            rgbFile.delete()
+        }
+        return VisionPrompts.finish(style, raw)
+    }
+
+    /**
+     * ⭐ A text-only answer to [ask], or the engine's error: the prompt enhancer ([PromptEnhance]), the same model, process and
+     * NPU sessions as [describe], with no picture. Blocking. ⚠ Needs engine 3: engine 2 always tokenized a picture.
+     */
+    fun rewrite(context: Context, ask: VisionPrompts.Ask, onPart: (String) -> Unit = {}): String =
+        run(context.applicationContext, ask, null, 0, 0, onPart)
+
+    private fun run(ctx: Context, ask: VisionPrompts.Ask, rgbFile: File?, w: Int, h: Int, onPart: (String) -> Unit): String {
+        appContext = ctx
+        freeMemoryFor(ctx)
         val caps = runCatching { DeviceProbe.caps() }.getOrNull()
         val devices = devicesOverride ?: caps?.let { devicesFor(it) } ?: "none"
         val req = Bundle().apply {
@@ -168,14 +183,14 @@ object VisionDescriber : DescribeModel {
             putInt(VlmService.K_NPU_LAYERS, if (devices == "none") 0 else 99)
             putBoolean(VlmService.K_VISION_NPU, !visionOnCpu && devices != "none")
             putInt(VlmService.K_IMAGE_TOKENS, IMAGE_TOKENS)
-            putString(VlmService.K_RGB, rgbFile.path)
+            putString(VlmService.K_RGB, rgbFile?.path.orEmpty())
             putInt(VlmService.K_W, w)
             putInt(VlmService.K_H, h)
             putString(VlmService.K_SYSTEM, ask.system)
             putString(VlmService.K_USER, ask.user)
             putInt(VlmService.K_MAX_TOKENS, ask.maxTokens)
-            putFloat(VlmService.K_TEMP, 0.3f)
-            putInt(VlmService.K_SEED, 42)
+            putFloat(VlmService.K_TEMP, ask.temp)
+            putInt(VlmService.K_SEED, ask.seed)
         }
         live.value = ""
         val raw = try {
@@ -184,10 +199,9 @@ object VisionDescriber : DescribeModel {
             live.value = ""
         }
         lastUse = System.currentTimeMillis()
-        rgbFile.delete()
         // Whole, in pieces under logcat's line limit: a layout that does not repair is read from here.
         raw.chunked(900).forEachIndexed { i, part -> Log.i(TAG, "raw answer ${i + 1}: $part") }
-        return VisionPrompts.finish(style, raw)
+        return raw
     }
 
     /**

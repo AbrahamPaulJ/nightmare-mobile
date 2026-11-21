@@ -213,6 +213,13 @@
     <string name="translate_failed">Translation failed: %1$s</string>
     <string name="translate_action">Translate to English</string>
     <string name="translate_undo">Undo translation</string>
+    <string name="enhance_action">Enhance the prompt</string>
+    <string name="enhance_undo">Undo the enhance</string>
+    <string name="enhance_working">Writing a fuller prompt on the phone…</string>
+    <string name="enhance_use">Use it</string>
+    <string name="enhance_again">Try again</string>
+    <string name="enhance_failed">Could not enhance the prompt: %1$s</string>
+    <string name="enhance_unusable">the answer was not a usable prompt</string>
     <string name="translate_about">Mozilla\'s Firefox Translations model, run offline on this phone.</string>
     <string name="translate_needs_title">Translating needs a model</string>
     <string name="translate_needs_body">%1$s runs on this phone, offline. Download it (%2$s)? The prompt is translated as soon as it lands.</string>

@@ -190,6 +190,13 @@
     <string name="translate_failed">翻译失败：%1$s</string>
     <string name="translate_action">翻译成英文</string>
     <string name="translate_undo">撤销翻译</string>
+    <string name="enhance_action">优化提示词</string>
+    <string name="enhance_undo">撤销优化</string>
+    <string name="enhance_working">正在手机上撰写更完整的提示词…</string>
+    <string name="enhance_use">使用</string>
+    <string name="enhance_again">再试一次</string>
+    <string name="enhance_failed">无法优化提示词：%1$s</string>
+    <string name="enhance_unusable">回答不是可用的提示词</string>
     <string name="translate_about">Mozilla 的 Firefox Translations 模型，在手机上离线运行。</string>
     <string name="translate_needs_title">翻译需要下载模型</string>
     <string name="translate_needs_body">%1$s 在手机上离线运行。下载（%2$s）？下载完成后提示词会立即翻译。</string>

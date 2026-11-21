@@ -344,6 +344,8 @@ fun CanvasScreen(
     onAutoSubject: ((node: String, done: (String?) -> Unit) -> Unit)? = null,
     /** ⭐⭐ Translate a prompt into English — [NodeInspectorBody]'s `onTranslate`. */
     onTranslate: ((node: String, param: String, done: (String) -> Unit) -> Unit)? = null,
+    /** ⭐⭐ The prompt enhancer (`docs/FLORENCE.md` §7): Qwen3-VL rewrites the prompt; done(null) when it could not. */
+    onEnhance: ((node: String, param: String, seed: Int, done: (String?) -> Unit) -> Unit)? = null,
     /**
      * ⭐⭐ Describe a picture into words for the prompt (`docs/FLORENCE.md`) —
      * `HarnessViewModel.describePicture`: a canvas image id or a photo URI and a
@@ -703,6 +705,7 @@ fun CanvasScreen(
         onPickMask = onPickMask,
         onAutoSubject = onAutoSubject,
         onTranslate = onTranslate,
+        onEnhance = onEnhance,
         onDescribe = onDescribe,
         parserInstalled = parserInstalled,
         parserRow = parserRow,

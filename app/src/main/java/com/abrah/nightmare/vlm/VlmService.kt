@@ -129,8 +129,9 @@ class VlmService : Service() {
                 }
                 val w = d.getInt(K_W)
                 val h = d.getInt(K_H)
-                val rgb = File(d.getString(K_RGB)!!).readBytes()
-                require(rgb.size == w * h * 3) { "the picture is ${rgb.size} bytes, expected ${w * h * 3}" }
+                // ⭐ No picture (w or h 0): a text-only turn, the prompt enhancer ([VisionDescriber.rewrite]).
+                val rgb = if (w > 0 && h > 0) File(d.getString(K_RGB)!!).readBytes() else ByteArray(0)
+                require(rgb.size == maxOf(w, 0) * maxOf(h, 0) * 3) { "the picture is ${rgb.size} bytes, expected ${w * h * 3}" }
                 val t1 = System.nanoTime()
                 val out = VlmNative.nativeDescribe(
                     handle, rgb, w, h, d.getString(K_SYSTEM).orEmpty(), d.getString(K_USER).orEmpty(),

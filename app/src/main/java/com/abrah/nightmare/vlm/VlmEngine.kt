@@ -25,14 +25,14 @@ object VlmEngine {
     const val MAIN = "libnmvlm.so"
 
     /** ⭐ llama.cpp v1.0.0 (`b1b770d`), CI 44902865061 (1.6.334's bridge: the picture token budget); the tag is the version stamp. */
-    const val URL = "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/vlm-engine-2/vlm-engine-2.zip"
+    const val URL = "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/vlm-engine-3/vlm-engine-3.zip"
     val HF_URL: String get() = "https://huggingface.co/AbrahamPJ/nightmare-dit-engine/resolve/main/" + URL.substringAfterLast('/')
-    const val BYTES = 5_460_420L
-    private const val SHA256 = "d21f45af8d50773f63fbad60309650d0e456ce576138096453224d4972788b25"
+    const val BYTES = 5_460_575L
+    private const val SHA256 = "bcbc87d5b134ac637acb98346e84c9fa90a3a9626b0b72667052c430facb0796"
 
     /** Every file the archive must unpack, and its exact size. */
     internal val FILES: List<Pair<String, Long>> = listOf(
-        MAIN to 5_810_480L,
+        MAIN to 5_810_592L,
         "libggml-htp-v73.so" to 969_864L,
         "libggml-htp-v75.so" to 969_864L,
         "libggml-htp-v79.so" to 990_440L,

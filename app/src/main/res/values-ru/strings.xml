@@ -193,6 +193,13 @@
     <string name="translate_failed">Не удалось перевести: %1$s</string>
     <string name="translate_action">Перевести на английский</string>
     <string name="translate_undo">Отменить перевод</string>
+    <string name="enhance_action">Улучшить промпт</string>
+    <string name="enhance_undo">Отменить улучшение</string>
+    <string name="enhance_working">Пишу подробный промпт на телефоне…</string>
+    <string name="enhance_use">Использовать</string>
+    <string name="enhance_again">Ещё вариант</string>
+    <string name="enhance_failed">Не удалось улучшить промпт: %1$s</string>
+    <string name="enhance_unusable">ответ не подходит как промпт</string>
     <string name="translate_about">Модель Firefox Translations от Mozilla, работает на телефоне без интернета.</string>
     <string name="translate_needs_title">Для перевода нужна модель</string>
     <string name="translate_needs_body">%1$s работает на телефоне без интернета. Скачать (%2$s)? Промпт переведётся, как только загрузка закончится.</string>

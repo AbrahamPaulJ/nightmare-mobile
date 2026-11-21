@@ -3969,6 +3969,40 @@ class HarnessViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * ⭐⭐ The prompt enhancer (`docs/FLORENCE.md` §7): [param] of [nodeId] rewritten by Qwen3-VL into what the wired
+     * checkpoint reads ([com.abrah.nightmare.vlm.PromptEnhance.targetFor]); [done] gets the text to OFFER, or null. Not
+     * written here: the dialog shows it first. ⚠ A missing model asks with the describe button's popup
+     * ([MissingModel.Describe]) and runs when it lands.
+     */
+    fun enhancePrompt(nodeId: String, param: String, seed: Int, done: (String?) -> Unit) {
+        val ctx = getApplication<Application>()
+        val vd = com.abrah.nightmare.vlm.VisionDescriber
+        if (!vd.isInstalled(ctx)) {
+            pendingDescribe = Pair({ enhancePrompt(nodeId, param, seed, done) }, { done(null) })
+            refreshDescribe()
+            missingModel = MissingModel.Describe(vd)
+            return
+        }
+        val idea = canvas.workflow.graph.byId[nodeId]?.params?.get(param).orEmpty()
+        val target = com.abrah.nightmare.vlm.PromptEnhance.targetFor(canvas.workflow.graph, nodeId)
+        viewModelScope.launch {
+            val out = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    val raw = vd.rewrite(ctx, com.abrah.nightmare.vlm.PromptEnhance.ask(target, idea, seed))
+                    com.abrah.nightmare.vlm.PromptEnhance.finish(target, raw)
+                        ?: throw java.io.IOException(ctx.getString(com.abrah.nightmare.R.string.enhance_unusable))
+                }
+            }
+            (out.exceptionOrNull() as? kotlinx.coroutines.CancellationException)?.let { throw it }
+            out.onSuccess { done(it) }.onFailure { e ->
+                ErrorReport.record(e)
+                toast(ctx.getString(com.abrah.nightmare.R.string.enhance_failed, e.message ?: e.javaClass.simpleName))
+                done(null)
+            }
+        }
+    }
+
     // ---- prompt translation (docs/TRANSLATE.md) ----------------------------
 
     /**

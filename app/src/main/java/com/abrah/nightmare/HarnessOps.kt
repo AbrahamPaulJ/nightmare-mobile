@@ -334,6 +334,9 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
             "describe_install" -> describeInstall(arg)
             "describe_vlm_exit" -> { com.abrah.nightmare.vlm.VisionDescriber.trim(); say("describe_vlm_exit: sent") }
             "describe" -> describeProbe(arg)
+            // ⭐ The prompt enhancer, headless and timed (docs/FLORENCE.md §7): `--es arg "h3_text|a cat says hello"`;
+            // the idea may be a file path (`@/data/local/tmp/idea.txt`) for text the shell would mangle.
+            "enhance" -> enhanceProbe(arg)
             else -> say("unknown intent op \"$op\"", bad = true)
         }
     }
@@ -3880,6 +3883,28 @@ class HarnessOps(private val ctx: Context, private val sink: Sink) {
                 val hwm = java.io.File("/proc/self/status").readLines().firstOrNull { it.startsWith("VmHWM") }
                 say("  ${mode.name.lowercase()} ${if (k == 0) "cold" else "warm"} ${(System.nanoTime() - t) / 1_000_000} ms ${hwm.orEmpty()}")
                 say("  \"$text\"")
+            }
+        }
+    }
+
+    private suspend fun enhanceProbe(arg: String?) {
+        val pe = com.abrah.nightmare.vlm.PromptEnhance
+        val target = com.abrah.nightmare.vlm.PromptEnhance.Target.entries.firstOrNull { it.name.equals(arg.orEmpty().substringBefore('|').trim(), ignoreCase = true) }
+            ?: return say("enhance: target is one of ${com.abrah.nightmare.vlm.PromptEnhance.Target.entries.joinToString { it.name.lowercase() }}", bad = true)
+        var idea = arg.orEmpty().substringAfter('|', "").trim()
+        if (idea.startsWith("@")) idea = runCatching { java.io.File(idea.drop(1)).readText() }.getOrDefault("")
+        if (idea.isBlank()) return say("enhance: no idea after the |", bad = true)
+        val vd = com.abrah.nightmare.vlm.VisionDescriber
+        if (!vd.isInstalled(ctx)) return say("enhance: ${vd.label} not installed. Run describe_install", bad = true)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            for (k in 0 until 2) {
+                val t = System.nanoTime()
+                val raw = runCatching { vd.rewrite(ctx, pe.ask(target, idea, seed = 1000 + k)) }
+                val ms = (System.nanoTime() - t) / 1_000_000
+                raw.onFailure { e -> say("  enhance ${target.name.lowercase()} FAILED in $ms ms: ${e.message}", bad = true) }
+                val text = raw.getOrNull()?.let { pe.finish(target, it) }
+                say("  enhance ${target.name.lowercase()} ${if (k == 0) "cold" else "warm"} $ms ms, ${raw.getOrNull()?.length ?: 0} chars, ${if (text == null) "UNUSABLE" else "ok"}")
+                (text ?: raw.getOrNull().orEmpty()).chunked(900).forEach { say("  | $it") }
             }
         }
     }

@@ -18,7 +18,8 @@ object VisionPrompts {
 
     enum class Style { PROSE, TAGS, LAYOUT }
 
-    data class Ask(val system: String, val user: String, val maxTokens: Int)
+    /** [temp] and [seed]: a describe reads what is there (0.3); a rewrite may invent ([PromptEnhance], a new seed per tap). */
+    data class Ask(val system: String, val user: String, val maxTokens: Int, val temp: Float = 0.3f, val seed: Int = 42)
 
     private const val SYSTEM =
         "You write prompts for an image generator. You describe exactly what is visible, plainly and without judgement, " +

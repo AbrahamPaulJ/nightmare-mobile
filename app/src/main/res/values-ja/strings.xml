@@ -205,6 +205,13 @@
 <string name="translate_failed">翻訳に失敗しました: %1$s</string>
 <string name="translate_action">英語に翻訳</string>
 <string name="translate_undo">翻訳を元に戻す</string>
+<string name="enhance_action">プロンプトを強化</string>
+<string name="enhance_undo">強化を元に戻す</string>
+<string name="enhance_working">スマホで詳しいプロンプトを作成中…</string>
+<string name="enhance_use">使う</string>
+<string name="enhance_again">もう一度</string>
+<string name="enhance_failed">プロンプトを強化できませんでした：%1$s</string>
+<string name="enhance_unusable">使えるプロンプトが返りませんでした</string>
 <string name="translate_about">Mozilla の Firefox Translations モデルを、このスマホ上でオフラインで実行します。</string>
 <string name="translate_needs_title">翻訳にはモデルが必要です</string>
 <string name="translate_needs_body">%1$s はこのスマホ上でオフラインで動作します。ダウンロードしますか（%2$s）？ダウンロードが完了するとすぐにプロンプトが翻訳されます。</string>
