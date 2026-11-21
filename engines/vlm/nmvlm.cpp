@@ -147,7 +147,8 @@ Java_com_abrah_nightmare_vlm_VlmNative_nativeLastError(JNIEnv* env, jclass) {
 // CPU alone). Returns a handle, or 0 with nativeLastError set.
 JNIEXPORT jlong JNICALL
 Java_com_abrah_nightmare_vlm_VlmNative_nativeLoad(JNIEnv* env, jclass, jstring modelPath, jstring mmprojPath,
-                                                  jint nCtx, jint nThreads, jint npuLayers, jboolean visionOnNpu) {
+                                                  jint nCtx, jint nThreads, jint npuLayers, jboolean visionOnNpu,
+                                                  jint imageTokens) {
   std::lock_guard<std::mutex> lock(g_mu);
   g_error.clear();
   auto* v = new Vlm();
@@ -186,6 +187,13 @@ Java_com_abrah_nightmare_vlm_VlmNative_nativeLoad(JNIEnv* env, jclass, jstring m
   pparams.n_threads = nThreads;
   pparams.print_timings = true;
   pparams.warmup = false;
+  // The picture's token budget, both ends: every picture is resized to about this many tokens. Without it the
+  // projector reserves working memory for the model's own maximum (1472x1472 for Qwen3-VL, ~0.7 GB on the NPU),
+  // and Qwen-VL grounds boxes well only from 1024 tokens up.
+  if (imageTokens > 0) {
+    pparams.image_min_tokens = imageTokens;
+    pparams.image_max_tokens = imageTokens;
+  }
   v->mtmd = mtmd_init_from_file(pp.c_str(), v->model, pparams);
   if (!v->mtmd || !mtmd_support_vision(v->mtmd)) {
     setError("could not load the vision projector " + pp);
@@ -195,8 +203,8 @@ Java_com_abrah_nightmare_vlm_VlmNative_nativeLoad(JNIEnv* env, jclass, jstring m
     delete v;
     return 0;
   }
-  LOGI("loaded %s + %s, ctx %d, npu layers %d, vision on %s", mp.c_str(), pp.c_str(), nCtx, npuLayers,
-       pparams.use_gpu ? "npu" : "cpu");
+  LOGI("loaded %s + %s, ctx %d, npu layers %d, vision on %s, picture tokens %d", mp.c_str(), pp.c_str(), nCtx,
+       npuLayers, pparams.use_gpu ? "npu" : "cpu", imageTokens);
   return reinterpret_cast<jlong>(v);
 }
 
