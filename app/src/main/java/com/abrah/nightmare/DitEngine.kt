@@ -180,7 +180,10 @@ object DitEngine {
      * (Same rule, same reason, as `Segmenter.URL`'s "a new filename per
      * revision, never an upload over the old one".)
      */
-    // ⭐ Current since 1.6.310: sched097 + `dit/099` (OpenCL only, a no-op here, so both lines stay level) + `dit/100`,
+    // ⭐ Current since 1.6.343: the line below + `dit/101` (attention's V cast, ~1 %), `dit/103` (FLUX.1's schedule counts
+    // 2x2 patches: no brick texture), `dit/102` + `dit/104` (H3 Image's Euler Spectral, per request: [ModelCatalog.H3_SPECTRAL]).
+    // CI 44953449665, branch `dit-104-engine`. Still ABI 111; the skels are unchanged (ggml only).
+    // Before it, since 1.6.310: sched097 + `dit/099` (OpenCL only, a no-op here, so both lines stay level) + `dit/100`,
     // MiniMax H3 Image (sd.cpp #2324 ported: the six PDD heads, its 2D VAE). CI 44406412683, branch `dit-100-engine`.
     // Still ABI 111; the wrapper only. ⚠ The GPU engine has no `dit/100`: H3 Image is an NPU model (v79).
     // Before it, since 1.6.295: keep095's line (`dit/094` Spectrum, `dit/095` kept runners, both off unless
@@ -188,7 +191,7 @@ object DitEngine {
     // (GitHub #111). CI 43537069630 (NPU), 43537079267 (GPU), branch `dit-088-engine`. Still ABI 111; the wrapper only,
     // skels are `dit/091`'s. ⚠ An older engine reads an unknown schedule as the model's own, so old and new mix safely.
     private const val NPU_URL =
-        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-flux103/dit-engine-abi111-flux103.zip"
+        "https://github.com/AbrahamPaulJ/nightmare-mobile/releases/download/dit-engine-abi111-h3spec104/dit-engine-abi111-h3spec104.zip"
 
     /**
      * ⭐⭐ The GPU variant ([DitGpu]): the same patch line + ggml's OpenCL backend with the Adreno kernels and `dit/067`
@@ -238,12 +241,12 @@ object DitEngine {
         if (downloadBase != Prefs.HF_ORIGIN) listOf(HF_URL, URL) else listOf(URL, HF_URL)
 
     /** ⚠ The ARCHIVE's size, measured off the file that was uploaded. */
-    val BYTES: Long get() = if (v82) GPU_V82_BYTES else if (gpu) GPU_BYTES else 23_330_691L
+    val BYTES: Long get() = if (v82) GPU_V82_BYTES else if (gpu) GPU_BYTES else 23_338_223L
 
     /** The unpacked `.so`, checked after extraction. */
     /** ⚠ Public so a test can build an engine fixture without the network. */
     val FILE_BYTES: Long get() = if (v82) GPU_V82_FILE_BYTES else if (gpu) GPU_FILE_BYTES else NPU_FILE_BYTES
-    private const val NPU_FILE_BYTES = 56_260_648L
+    private const val NPU_FILE_BYTES = 56_271_360L
 
     /**
      * ⭐ The GPU variant: CI 41781422175 (branch `gpu-110`), the NPU list + 067 + 080 + 081 + `085`, `opencl=true`.
@@ -268,7 +271,7 @@ object DitEngine {
      * ⭐ It is the digest GitHub publishes for the release asset, so there is
      * no second place to keep it in step.
      */
-    private val SHA256: String get() = if (v82) GPU_V82_SHA256 else if (gpu) GPU_SHA256 else "53152a4fbfd1625bc3b645477e734afb9173fcf30f38917db5983d107095d84d"
+    private val SHA256: String get() = if (v82) GPU_V82_SHA256 else if (gpu) GPU_SHA256 else "47a4efe991951b8287d0971a4bf9a2706349e71b538505526bde7d25707eada3"
 
     fun dir(context: Context): File = BackendProcess.runtimeDir(context)
 

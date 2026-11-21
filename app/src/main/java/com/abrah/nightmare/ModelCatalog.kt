@@ -1595,14 +1595,16 @@ object ModelCatalog {
      */
     fun schedulersFor(family: Family): List<String> = when {
         family == Family.ANIMA -> listOf("euler", "euler_a")
-        family == Family.WAN || family == Family.IRIS -> DIT_SAMPLER_IDS
+        family == Family.WAN || family == Family.IRIS -> DIT_COMMON_SAMPLER_IDS
+        // ⭐ H3 Image alone has the spectral sampler ([H3_SPECTRAL]).
+        family == Family.H3IMAGE -> DIT_SCHEDULERS + H3_SPECTRAL
         family.dit -> DIT_SCHEDULERS
         else -> SCHEDULERS
     }
 
     /** ⭐ The DiT samplers, each with the schedules ([DIT_SCHEDULES]) the engine takes since ABI 108. */
     val DIT_SCHEDULERS: List<String> by lazy {
-        DIT_SAMPLER_IDS.flatMap { id -> DIT_SCHEDULES.map { (sfx, _) -> joinScheduler(id, sfx) } }.distinct()
+        DIT_COMMON_SAMPLER_IDS.flatMap { id -> DIT_SCHEDULES.map { (sfx, _) -> joinScheduler(id, sfx) } }.distinct()
     }
 
     /**
@@ -1671,15 +1673,29 @@ object ModelCatalog {
         "res_multistep" to "Res Multistep",
         "ipndm" to "iPNDM",
         "lcm" to "LCM",
+        H3_SPECTRAL to "Euler Spectral",
     )
+
+    /** Every DiT sampler name the app knows (to recognise and label a stored value). */
     val DIT_SAMPLER_IDS: List<String> = DIT_SAMPLERS.map { it.first }
+
+    /**
+     * ⭐ H3 Image's spectral sampler (engine `dit/102` + `dit/104`, the user's call 2026-11-22: "ship as an option"):
+     * Euler, with the noise above a frequency cutoff re-drawn on the middle steps. The request carries it, so a switch
+     * needs no relaunch. An engine before `dit/104` does not know the name and falls back to the model's default sampler.
+     * No schedule of its own ([schedulesSupported]). Offered by [schedulersFor] for [Family.H3IMAGE] only.
+     */
+    const val H3_SPECTRAL = "h3_spectral"
+
+    /** The samplers every DiT family takes: all but the one family's own. */
+    val DIT_COMMON_SAMPLER_IDS: List<String> = DIT_SAMPLER_IDS - H3_SPECTRAL
     const val DIT_DEFAULT_SAMPLER = "euler"
 
     /**
      * ⚠ LCM has no schedule of its own to change — the backend's LCM scheduler ignores both
      * (upstream guards the same: `karrasSupported = baseId != "lcm"`), and DiT samplers take none.
      */
-    fun schedulesSupported(base: String) = base != "lcm" && (SAMPLERS.any { it.first == base } || base in DIT_SAMPLER_IDS)
+    fun schedulesSupported(base: String) = base != "lcm" && base != H3_SPECTRAL && (SAMPLERS.any { it.first == base } || base in DIT_SAMPLER_IDS)
 
     /** ⚠ Kept for its callers: Karras is one of the schedules. */
     fun karrasSupported(base: String) = schedulesSupported(base)

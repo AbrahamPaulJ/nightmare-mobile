@@ -110,7 +110,7 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
 - **A tag toolbar**: while you type: make the tag under the cursor heavier or lighter, delete it, add one after it, undo, redo.
 - **Tag autocomplete**: matching Danbooru tags under the prompt box as you type, most used first; one tap downloads the list, or import your own CSV, plus an optional translation CSV to search in your own language.
 - **`<lora:name:0.8>` in a prompt**: a prompt pasted from CivitAI applies the LoRAs it names (when you have them) and the tags never reach the text encoder. Type `<lora:` and your LoRAs are offered as chips, the strength left selected to type over.
-- **Samplers**: DPM++ 2M, 2M SDE, 3M, 3M SDE and SDE, Euler, Euler A and LCM with a Normal, Karras or Exponential schedule on SD 1.5 and SDXL; Euler, Heun, DPM++ 2M, ER-SDE, Res Multistep and more on the DiT models, with those three schedules plus SGM Uniform, Bong Tangent, Simple, Beta, Beta57, Linear Quadratic and Radiance Shift (not on Wan or Iris), so a checkpoint runs the way its author intended.
+- **Samplers**: DPM++ 2M, 2M SDE, 3M, 3M SDE and SDE, Euler, Euler A and LCM with a Normal, Karras or Exponential schedule on SD 1.5 and SDXL; Euler, Heun, DPM++ 2M, ER-SDE, Res Multistep and more on the DiT models, with those three schedules plus SGM Uniform, Bong Tangent, Simple, Beta, Beta57, Linear Quadratic and Radiance Shift (not on Wan or Iris), so a checkpoint runs the way its author intended. MiniMax H3 Image adds Euler Spectral, which re-draws the fine-detail noise on the middle steps (a different take on the same seed).
 - **Translate**: a Russian or Chinese prompt to English, offline (Firefox Translations), keeping weights like `(long hair:1.2)`.
 
 ## Your phone, your files

@@ -76,13 +76,27 @@ class SamplerNamingTest {
      * ⭐ The DiT families offer the engine's names, and since engine ABI 108 (`dit/032`) the same three schedules as
      * SD; Wan and Iris their names only (no schedule in the video request; Iris has its own sigmas); Anima (QNN) its two.
      */
+    /** H3 Image's spectral sampler (engine dit/102 + dit/104) is its own: no other family lists it, and it takes no schedule. */
+    @Test
+    fun theSpectralSamplerIsH3ImagesAlone() {
+        val h3 = ModelCatalog.schedulersFor(Family.H3IMAGE)
+        assertTrue(ModelCatalog.H3_SPECTRAL in h3)
+        assertTrue(ModelCatalog.DIT_SCHEDULERS.all { it in h3 })
+        for (f in listOf(Family.FLUX2, Family.ZIMAGE, Family.WAN, Family.IRIS, Family.ANIMA_DIT)) {
+            assertTrue(f.name, ModelCatalog.H3_SPECTRAL !in ModelCatalog.schedulersFor(f))
+        }
+        assertEquals(ModelCatalog.H3_SPECTRAL to "", ModelCatalog.splitScheduler(ModelCatalog.H3_SPECTRAL))
+        assertEquals(ModelCatalog.H3_SPECTRAL, ModelCatalog.joinScheduler(ModelCatalog.H3_SPECTRAL, "_karras"))
+        assertEquals("Euler Spectral", ModelCatalog.schedulerLabel(ModelCatalog.H3_SPECTRAL))
+    }
+
     @Test
     fun ditFamiliesOfferTheEnginesSamplers() {
         assertEquals(ModelCatalog.DIT_SCHEDULERS, ModelCatalog.schedulersFor(Family.FLUX2))
         assertTrue("er_sde" in ModelCatalog.schedulersFor(Family.ANIMA_DIT))
         assertTrue("er_sde_karras" in ModelCatalog.schedulersFor(Family.ZIMAGE))
-        assertEquals(ModelCatalog.DIT_SAMPLER_IDS, ModelCatalog.schedulersFor(Family.WAN))
-        assertEquals(ModelCatalog.DIT_SAMPLER_IDS, ModelCatalog.schedulersFor(Family.IRIS))
+        assertEquals(ModelCatalog.DIT_COMMON_SAMPLER_IDS, ModelCatalog.schedulersFor(Family.WAN))
+        assertEquals(ModelCatalog.DIT_COMMON_SAMPLER_IDS, ModelCatalog.schedulersFor(Family.IRIS))
         assertEquals(listOf("euler", "euler_a"), ModelCatalog.schedulersFor(Family.ANIMA))
         assertEquals("dpm++2m_karras", ModelCatalog.joinScheduler("dpm++2m", "_karras"))
         assertEquals("er_sde" to "_exponential", ModelCatalog.splitScheduler("er_sde_exponential"))

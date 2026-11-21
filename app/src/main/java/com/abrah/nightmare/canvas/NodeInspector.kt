@@ -3048,7 +3048,10 @@ internal fun NodeInspectorBody(
                                     pick(ModelCatalog.joinScheduler(base, sfx))
                                 },
                             ) else Text(
-                                stringResource(R.string.schedule_unavailable),
+                                stringResource(
+                                    if (base == ModelCatalog.H3_SPECTRAL) R.string.schedule_unavailable_spectral
+                                    else R.string.schedule_unavailable,
+                                ),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

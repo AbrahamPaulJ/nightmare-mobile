@@ -1338,6 +1338,7 @@
 <string name="schedule_beta57">Beta57</string>
 <string name="schedule_radiance_shift">Radiance Shift</string>
 <string name="schedule_unavailable">LCM は独自のスケジュールを使用します</string>
+<string name="schedule_unavailable_spectral">Euler Spectral はモデル独自のスケジュールを使用します</string>
 <string name="drawer_support">サポート</string>
 <string name="support_coffee">コーヒーをおごる</string>
 <string name="support_title">Nightmare を支援</string>

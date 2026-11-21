@@ -1351,6 +1351,7 @@
     <string name="schedule_beta57">Beta57</string>
     <string name="schedule_radiance_shift">Radiance Shift</string>
     <string name="schedule_unavailable">У LCM своё расписание</string>
+    <string name="schedule_unavailable_spectral">Euler Spectral идёт по расписанию модели</string>
     <string name="drawer_support">Поддержка</string>
     <string name="support_coffee">Угостить кофе</string>
     <string name="support_title">Поддержать Nightmare</string>

@@ -30,6 +30,7 @@ touch. No server, no account, no cloud.
 - **The desktop toolbox**: inpaint and outpaint, tap to select (Segment Anything), ControlNet, IP-Adapter,
   LoRAs, hires fix, Fix faces and hands (ADetailer), editing by instruction (FLUX.2 Klein, Qwen Image,
   Fibo 2.0), background removal (RMBG 3.0), upscalers, seed, setting and prompt sweeps as grids, and A1111 `parameters` in every saved PNG.
+  A picture described as a prompt, and a short idea written up as a full one, by Qwen3-VL 4B on the phone.
 - **Offline and private**: nothing is uploaded. A local API (off by default) also speaks AUTOMATIC1111's
   `/sdapi/v1/txt2img`, so other apps can use your phone as their image generator.
 
