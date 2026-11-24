@@ -3,3 +3,5 @@
 # ⚠ The USERNAME, not a link. GitHub builds the URL itself, so a dashboard or
 #   tracking link pasted here would be both wrong and needlessly public.
 buy_me_a_coffee: abrahampaulj
+# Afdian has no FUNDING.yml key of its own, so it is a custom link (the public page, not the dashboard).
+custom: ["https://afdian.com/a/abrahampj"]

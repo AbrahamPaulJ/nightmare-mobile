@@ -117,8 +117,12 @@ log, your phone and model files, but never your prompt. Copy or share it as a `.
 
 ## Support
 
-[buymeacoffee.com/abrahampaulj](https://buymeacoffee.com/abrahampaulj): tips are welcome and change
-nothing: the app stays free, offline and CC BY-NC, and nothing is gated behind them.
+Tips are welcome and change nothing: the app stays free, offline and CC BY-NC, and nothing is gated
+behind them.
+
+- **[Buy Me a Coffee](https://buymeacoffee.com/abrahampaulj)**
+- **[Afdian (爱发电)](https://afdian.com/a/abrahampj)**, for supporters in China and anyone else who prefers it.
+  中国用户可以通过爱发电支持。
 
 <sub>**Keywords:** on device AI, offline Stable Diffusion, ComfyUI for Android, mobile Stable
 Diffusion, local image generation, on device video generation, node editor, Qualcomm Hexagon NPU,
