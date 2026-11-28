@@ -1514,8 +1514,10 @@
     <string name="run_end_done">运行完成，用时 %1$s</string>
     <string name="run_end_failed">运行失败，用时 %1$s</string>
     <string name="run_moss_layout">按布局生成</string>
+    <string name="run_layout_outside">布局框在画面之外。请把它们移到画面上</string>
     <string name="layout_tab">布局</string>
     <string name="layout_note">为画面中的每个元素画一个框并说明它是什么。提示词描述整张图。在空白处拖动画框，拖动框可移动，拖动角上的圆点可调整大小。边缘会吸附到画面中线和其他框。</string>
+    <string name="layout_note_inpaint">在每个新元素要出现的位置画一个框并说明它是什么。每个框都会被重绘，就像在蒙版里涂过一样，所以只画框就够了。提示词描述编辑后的整张图。想要干净的编辑，请把降噪保持为 1。</string>
     <string name="layout_object">物体</string>
     <string name="layout_character">角色</string>
     <string name="layout_text">文字</string>

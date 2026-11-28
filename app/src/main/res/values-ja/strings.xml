@@ -1535,8 +1535,10 @@ Nightmare は、このモデルを使用する箇所に \"Powered by MiniMax-H3-
 <string name="run_end_done">%1$s で実行が完了しました</string>
 <string name="run_end_failed">%1$s の後に実行が失敗しました</string>
 <string name="run_moss_layout">そのレイアウトで生成中</string>
+<string name="run_layout_outside">レイアウトのボックスが画像の外にあります。画像の上に移動してください</string>
 <string name="layout_tab">レイアウト</string>
 <string name="layout_note">画像の中のもの一つひとつにボックスを描き、それが何かを指定します。プロンプトは画像全体を記述します。空白部分をドラッグするとボックスを描け、ボックスをドラッグすると移動でき、その点をドラッグするとサイズを変更できます。</string>
+<string name="layout_note_inpaint">新しく入れるもの一つひとつの位置にボックスを描き、それが何かを指定します。ボックスはマスクで塗ったのと同じく描き直されるので、ボックスだけで十分です。プロンプトは編集後の画像全体を記述します。きれいに編集するにはノイズ除去を1のままにしてください。</string>
 <string name="layout_object">オブジェクト</string>
 <string name="layout_character">キャラクター</string>
 <string name="layout_text">テキスト</string>

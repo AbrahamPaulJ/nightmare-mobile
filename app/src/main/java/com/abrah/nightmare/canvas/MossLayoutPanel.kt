@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
@@ -70,7 +71,7 @@ import com.abrah.nightmare.ui.dangerOutlinedColors
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) -> Unit) {
+internal fun MossLayoutPanel(param: String?, w: Int, h: Int, backdrop: ImageBitmap? = null, onSave: (String) -> Unit) {
     var layout by remember(param) { mutableStateOf(MossLayout.read(param)) }
     var selected by remember { mutableIntStateOf(-1) }
     var clearing by remember { mutableStateOf(false) }
@@ -81,8 +82,12 @@ internal fun MossLayoutPanel(param: String?, w: Int, h: Int, onSave: (String) ->
         stringResource(R.string.layout_object), stringResource(R.string.layout_character), stringResource(R.string.layout_text),
     )
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.layout_note), style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LayoutCanvas(layout, selected, w, h, onSelect = { selected = it }, onDone = { commit(it) })
+        // ⭐ [backdrop] = MOSS Inpaint (GitHub #159): the boxes are drawn on the photo and each one is repainted.
+        Text(
+            stringResource(if (backdrop != null) R.string.layout_note_inpaint else R.string.layout_note),
+            style = NoteTextStyle, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LayoutCanvas(layout, selected, w, h, backdrop, onSelect = { selected = it }, onDone = { commit(it) })
         // ⚠ A FlowRow: on a narrow phone a button moves to a second line whole instead of its label wrapping (the user,
         // 2026-11-19: Clear came out as "Cle / ar"). Destructive before the add, as every row orders them.
         androidx.compose.foundation.layout.FlowRow(
@@ -175,6 +180,7 @@ private fun LayoutCanvas(
     selected: Int,
     w: Int,
     h: Int,
+    backdrop: ImageBitmap?,
     onSelect: (Int) -> Unit,
     onDone: (MossLayout.Layout) -> Unit,
 ) {
@@ -299,6 +305,12 @@ private fun LayoutCanvas(
                     }
                 },
         ) {
+            backdrop?.let {
+                drawImage(
+                    it, dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()),
+                    filterQuality = androidx.compose.ui.graphics.FilterQuality.Low,
+                )
+            }
             (live ?: layout).boxes.forEachIndexed { i, b ->
                 val col = layoutColor(b.label)
                 val tl = Offset((b.x1 * size.width).toFloat(), (b.y1 * size.height).toFloat())
@@ -429,14 +441,14 @@ private fun PxField(label: String, value: Int, modifier: Modifier, onSet: (Int) 
  * composable, because a tile's thumbnail is an [ImageBitmap] ([EditorTile]).
  */
 @Composable
-internal fun mossLayoutTile(param: String?, w: Int, h: Int, panel: @Composable () -> Unit): EditorTile {
+internal fun mossLayoutTile(param: String?, w: Int, h: Int, backdrop: ImageBitmap? = null, panel: @Composable () -> Unit): EditorTile {
     val layout = remember(param) { MossLayout.read(param) }
     val bg = MaterialTheme.colorScheme.surfaceVariant.toArgb()
-    val thumb = remember(param, w, h, bg) { if (layout.boxes.isEmpty()) null else layoutThumb(layout, w, h, bg) }
+    val thumb = remember(param, w, h, bg, backdrop) { if (layout.boxes.isEmpty()) null else layoutThumb(layout, w, h, bg, backdrop) }
     return EditorTile(stringResource(R.string.layout_tab), thumb, empty = layout.boxes.isEmpty(), panel = panel)
 }
 
-internal fun layoutThumb(layout: MossLayout.Layout, w: Int, h: Int, background: Int): ImageBitmap {
+internal fun layoutThumb(layout: MossLayout.Layout, w: Int, h: Int, background: Int, backdrop: ImageBitmap? = null): ImageBitmap {
     val long = 192f
     val s = long / maxOf(w, h, 1)
     val bw = (w * s).toInt().coerceAtLeast(16)
@@ -444,6 +456,9 @@ internal fun layoutThumb(layout: MossLayout.Layout, w: Int, h: Int, background: 
     val bmp = android.graphics.Bitmap.createBitmap(bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
     val c = android.graphics.Canvas(bmp)
     c.drawColor(background)
+    backdrop?.let {
+        c.drawBitmap(it.asAndroidBitmap(), null, android.graphics.Rect(0, 0, bw, bh), android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+    }
     val fill = android.graphics.Paint()
     val edge = android.graphics.Paint().apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = 2f }
     for (b in layout.boxes) {

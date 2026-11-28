@@ -1633,10 +1633,16 @@ class SdSampler(
         // ⚠ Padding is still the one exception: an outpaint frame hanging off
         // the photo IS the mask, and needs no painting.
         val padded = paddingOf(p) != null
+        // ⭐⭐ MOSS Inpaint's Layout boxes (GitHub #159, the user 2026-11-29): each box is in the PHOTO's fractions, like
+        // a stroke, and is repainted, so boxes alone are a mask. Added below as their own layer ([inpaintBoxes]); the
+        // prompt is compiled once the render window is known ([MossLayout.mapped]).
+        val inpaintLayout = if (family == Family.MOSS && inpaint) {
+            MossLayout.read(node.params[MossLayout.PARAM]).takeIf { it.boxes.isNotEmpty() }
+        } else null
         // ⭐ An object's ring is ordinary mask on the image layer
         // ([MaskOp.ObjectRing]) — but only while its object is there.
         val placedObjects = if (inpaint) AddObjects.of(p) else emptyList()
-        if (inpaint && AddObjects.withoutDeadRings(stored, placedObjects).isEmpty && !padded) {
+        if (inpaint && AddObjects.withoutDeadRings(stored, placedObjects).isEmpty && !padded && inpaintLayout == null) {
             throw NeedsInput(ctx.text(R.string.run_nothing_masked, "nothing masked. Paint an area, then Run again"))
         }
         // ⚠⚠ Still gated to a CHAINED picture, unlike the check above: a plain
@@ -1711,7 +1717,7 @@ class SdSampler(
         // clothes silently became a plain re-render. ⚠ Now that picks are
         // applied to every new photo (Enable auto mask) that would happen
         // without the person ever opening the editor, so it is said by name.
-        if (inpaint && !padded && painted.ops.none { it !is MaskOp.Invert } &&
+        if (inpaint && !padded && inpaintLayout == null && painted.ops.none { it !is MaskOp.Invert } &&
             (MaskTaps.hasPicks(stored) || MaskTaps.hasTaps(stored) || MaskTaps.hasSubject(stored))
         ) {
             val names = stored.ops.filterIsInstance<MaskOp.Pick>()
@@ -1753,9 +1759,9 @@ class SdSampler(
             }
         }
         val photoIn = objectRender?.photo ?: src
-        val paintedAll = objectRender?.let { r ->
+        val paintedAll = (objectRender?.let { r ->
             AddObjects.resolveRings(painted, placedObjects, r.cuts, src.width, src.height)
-        } ?: painted
+        } ?: painted).let { m -> inpaintLayout?.let { m.plus(inpaintBoxes(it)) } ?: m }
         // ⭐⭐ OUTPAINT: a frame hanging off the photo is masked there whether or
         // not anything was painted — DreamUI's `isEmpty` counts the padding too.
         val padding = paddingOf(p)
@@ -1883,9 +1889,32 @@ class SdSampler(
         // below confines it to the mask ([SdSampler.ZIMAGE_INPAINT]).
         // `docs/MODELS.md` §9.
         if (family.dit) {
+            // ⭐⭐ MOSS Inpaint's boxes, moved from the photo into this render's canvas: photo → frame → the cut → the
+            // canvas it is centred on ([padToCanvas]). The reporter's finding (GitHub #159): the boxes place things
+            // even with every position word taken out of the prompt, so they must land where they were drawn.
+            val boxed = inpaintLayout?.let { l ->
+                val fwPx = frameRect.right - frameRect.left
+                val fhPx = frameRect.bottom - frameRect.top
+                val ox = (w - cut.image.width) / 2
+                val oy = (h - cut.image.height) / 2
+                val moved = MossLayout.mapped(l) { x, y ->
+                    val xf = (x * photoIn.width - frameRect.left) * frame.width / fwPx
+                    val yf = (y * photoIn.height - frameRect.top) * frame.height / fhPx
+                    val xc = (xf - cut.rect[0]) * cut.image.width / cut.rect[2]
+                    val yc = (yf - cut.rect[1]) * cut.image.height / cut.rect[3]
+                    (xc + ox) / w to (yc + oy) / h
+                }
+                val text = try {
+                    MossLayout.compile(moved, pos.text, w, h)
+                } catch (e: IllegalArgumentException) {
+                    throw IllegalArgumentException("node \"${node.id}\": ${e.message}")
+                } ?: throw NeedsInput(ctx.text(R.string.run_layout_outside, "the layout boxes are outside the picture. Move them onto it"))
+                ctx.say(ctx.text(R.string.run_moss_layout, "rendering with its layout"))
+                Value.Prompt(text, neg.text)
+            } ?: prompt
             // ⭐ Klein edits the cut whole and the paste keeps the rest ([FLUX2_INPAINT]); the others redraw in the mask.
-            val patchBmp = if (family == Family.FLUX2) runDitEditCut(ctx, node, p, prompt, imagePng, inputs, w, h)
-            else runDitMasked(ctx, node, p, prompt, imagePng, maskPng, w, h)
+            val patchBmp = if (family == Family.FLUX2) runDitEditCut(ctx, node, p, boxed, imagePng, inputs, w, h)
+            else runDitMasked(ctx, node, p, boxed, imagePng, maskPng, w, h)
             return finishInpaint(ctx, node, p, photoIn, frame, frameRect, cut, patchBmp)
         }
 
@@ -2087,6 +2116,19 @@ class SdSampler(
         }
         return android.graphics.BitmapFactory.decodeByteArray(out.png, 0, out.png.size)
             ?: throw IllegalStateException("node \"${node.id}\": the engine's picture would not decode")
+    }
+
+    /**
+     * ⭐ MOSS Inpaint's Layout boxes as mask (GitHub #159): one region per box over the photo's fractions, in a layer of
+     * their own so an Invert or Erase painted before them does not reach in. Not exact, so grow and feather spread them
+     * like a tapped region. ⚠ In memory only, like every [MaskOp.Placed]: the boxes are stored on the node.
+     */
+    private fun inpaintBoxes(l: MossLayout.Layout): MaskOp.Layer {
+        val solid = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ALPHA_8)
+            .apply { eraseColor(android.graphics.Color.WHITE) }
+        return MaskOp.Layer(l.boxes.map { b ->
+            MaskOp.Placed(solid, b.x1.toFloat(), b.y1.toFloat(), (b.x2 - b.x1).toFloat(), (b.y2 - b.y1).toFloat())
+        })
     }
 
     private suspend fun runDitMasked(

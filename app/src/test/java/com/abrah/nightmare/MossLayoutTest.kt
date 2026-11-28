@@ -80,4 +80,23 @@ class MossLayoutTest {
     fun aTextBoxWithoutTextIsRefused() {
         MossLayout.compile(MossLayout.Layout(listOf(MossLayout.Box("text", "a sign", "", 0.0, 0.0, 0.5, 0.5))), "", 1024, 1024)
     }
+
+    /**
+     * ⭐ GitHub #159: a MOSS Inpaint box drawn on the photo lands at the same place on the render's canvas. A 2048x1024
+     * photo, "Only masked" cutting its right half (1024x1024 at x 1024) to a 1024 canvas: a box over x 0.75..1.0 of the
+     * photo covers 0.5..1.0 of the canvas; a box wholly in the left half is dropped.
+     */
+    @Test
+    fun boxesMoveFromThePhotoToTheCut() {
+        val l = MossLayout.Layout(listOf(
+            MossLayout.Box(label = "character", caption = "a tiger", x1 = 0.75, y1 = 0.25, x2 = 1.0, y2 = 0.5),
+            MossLayout.Box(caption = "gone", x1 = 0.1, y1 = 0.1, x2 = 0.3, y2 = 0.3),
+        ))
+        val moved = MossLayout.mapped(l) { x, y -> (x * 2048 - 1024) / 1024 to y }
+        assertEquals(1, moved.boxes.size)
+        val b = moved.boxes[0]
+        assertEquals(0.5, b.x1, 1e-9); assertEquals(1.0, b.x2, 1e-9)
+        assertEquals(0.25, b.y1, 1e-9); assertEquals(0.5, b.y2, 1e-9)
+        assertEquals("a tiger", b.caption)
+    }
 }

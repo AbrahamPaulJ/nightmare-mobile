@@ -2495,14 +2495,28 @@ internal fun NodeInspectorBody(
             }
         }
         // ⭐⭐ A MOSS sampler's Layout tab (GitHub #77): boxes on the picture, compiled into its prompt ([com.abrah.nightmare.MossLayout]).
-        // ⚠ Text to image only (the user, 2026-11-19): with a photo wired the boxes are not sent ([SdSampler.run]).
-        val layoutTile = if (node.type != com.abrah.nightmare.SdSampler.MOSS.name || node.inputs["image"] != null) null else {
+        // ⚠ Text to image, and MOSS Inpaint (GitHub #159, the user 2026-11-29); never image to image, where a whole
+        // redraw keeps the old layout. On Inpaint the boxes sit on the PHOTO (fractions of it, like the mask) and each
+        // one is repainted ([SdSampler.run]).
+        val mossInpaint = node.type == com.abrah.nightmare.SdSampler.MOSS_INPAINT.name && cropSource != null
+        val layoutTile = if (!mossInpaint && (node.type != com.abrah.nightmare.SdSampler.MOSS.name || node.inputs["image"] != null)) null else {
             val live = com.abrah.nightmare.applyDefaults(type?.widgets.orEmpty(), node)
-            val lw = live["width"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
-            val lh = live["height"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
+            val lw = if (mossInpaint) cropSource!!.width else live["width"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
+            val lh = if (mossInpaint) cropSource!!.height else live["height"]?.toIntOrNull()?.takeIf { it > 0 } ?: 1024
+            val backdrop = if (mossInpaint) cropSource else null
             val param = node.params[com.abrah.nightmare.MossLayout.PARAM]
-            mossLayoutTile(param, lw, lh) {
-                MossLayoutPanel(param, lw, lh) { onSetParam(nodeId, com.abrah.nightmare.MossLayout.PARAM, it) }
+            mossLayoutTile(param, lw, lh, backdrop) {
+                MossLayoutPanel(param, lw, lh, backdrop) { v ->
+                    onSetParam(nodeId, com.abrah.nightmare.MossLayout.PARAM, v)
+                    // ⭐ The first box on an Inpaint brings the reporter's recipe (GitHub #159: Denoise 1, a light feather),
+                    // only where the person has not set their own.
+                    if (mossInpaint && com.abrah.nightmare.MossLayout.read(param).boxes.isEmpty() &&
+                        com.abrah.nightmare.MossLayout.read(v).boxes.isNotEmpty()
+                    ) {
+                        if (node.params["denoise"] == null) onSetParam(nodeId, "denoise", "1.0")
+                        if (node.params["feather"] == null) onSetParam(nodeId, "feather", com.abrah.nightmare.MossLayout.INPAINT_FEATHER)
+                    }
+                }
             }
         }
         // ⭐ The Default view's References row on a DiT edit (images 2 to 4); Advanced wires them ([ReferencesRow]).

@@ -1546,8 +1546,10 @@
     <string name="run_end_done">Run finished in %1$s</string>
     <string name="run_end_failed">Run failed after %1$s</string>
     <string name="run_moss_layout">rendering with its layout</string>
+    <string name="run_layout_outside">the layout boxes are outside the picture. Move them onto it</string>
     <string name="layout_tab">Layout</string>
     <string name="layout_note">Draw a box for each thing in the picture and say what it is. The prompt describes the whole picture. Drag on an empty part to draw a box, drag a box to move it, drag a corner dot to resize it. Edges snap to the picture\'s middle and to the other boxes.</string>
+    <string name="layout_note_inpaint">Draw a box where each new thing goes and say what it is. Every box is repainted, as if you had painted it in the mask, so a box alone is enough. The prompt describes the whole edited picture. For a clean edit keep Denoise at 1.</string>
     <string name="layout_object">Object</string>
     <string name="layout_character">Character</string>
     <string name="layout_text">Text</string>

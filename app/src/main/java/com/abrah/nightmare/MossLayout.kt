@@ -28,6 +28,22 @@ object MossLayout {
 
     val LABELS = listOf("object", "character", "text")
 
+    /** ⭐ MOSS Inpaint's feather once a first box is drawn (GitHub #159's recipe: 8 to 16 px on a 1024 picture). */
+    const val INPAINT_FEATHER = "0.012"
+
+    /**
+     * ⭐ [l]'s boxes moved into another picture's fractions by [map] (a corner in, the same corner out), each clipped to
+     * that picture; a box left with no area is dropped. MOSS Inpaint: the photo's boxes on the render's canvas.
+     */
+    fun mapped(l: Layout, map: (Double, Double) -> Pair<Double, Double>): Layout = l.copy(boxes = l.boxes.mapNotNull { b ->
+        val (x1, y1) = map(b.x1, b.y1)
+        val (x2, y2) = map(b.x2, b.y2)
+        b.copy(
+            x1 = x1.coerceIn(0.0, 1.0), y1 = y1.coerceIn(0.0, 1.0),
+            x2 = x2.coerceIn(0.0, 1.0), y2 = y2.coerceIn(0.0, 1.0),
+        ).takeIf { it.x2 > it.x1 && it.y2 > it.y1 }
+    })
+
     /** ⭐ One element: [x1]..[y2] are fractions of the picture (0 at the left and top). */
     data class Box(
         val label: String = "object",

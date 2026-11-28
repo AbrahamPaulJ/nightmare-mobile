@@ -62,8 +62,11 @@ Image to image still run there with an imported SDXL MNN or SD 1.5 CPU model, on
 - **MOSS-Image Layout**: every MOSS node has a **Layout** tab: draw a box for each thing in the picture and say what
   it is (an object, a character, or text with its exact words), and MOSS puts it there. A layout from ComfyUI's
   MOSS Layout Prompt node can be pasted into the prompt instead. Boxes resize from any corner, snap to the picture's
-  middle and to each other, take their position and size typed in pixels, and the tab has Undo and Redo. Text to
-  image only: with a photo wired in, the tab is hidden and the boxes are not used.
+  middle and to each other, take their position and size typed in pixels, and the tab has Undo and Redo. On text to
+  image and on **MOSS Inpaint**. In Inpaint the boxes are drawn over your photo and each box is repainted, so drawing a
+  box is enough (no mask painting needed): draw a box where the new thing goes and say what it is. The first box sets
+  Denoise to 1 and a light feather, the settings that edit cleanly. Not on image to image, where a whole redraw keeps
+  the old layout.
 - **FLUX.3 Image Klein** (16 steps): Black Forest Labs' newest model (5.6B), sharp detail, good prompt following and readable text. About 45 s at 512x512 and 2 min at 1024x1024 on an 8 Elite; also on the 8 Gen 3. About 6.2 GB, or 3.9 GB beside Krea 2 Turbo, whose text encoder it shares. Text to image, and Image edit (a photo and a prompt). FLUX Kommunity License.
 - **Fibo 2.0 Edit Turbo** (4 steps): Bria's 8B editor. Wire a picture into the Image edit flow and say what to change; the rest of the picture stays, and it writes text on signs. With no picture it makes one from the prompt alone, in about a minute at 896x1600. About 8.4 GB. 8 Gen 3 or newer and 12 GB of RAM. About 1 min at 512x512 on an 8 Elite. Non-commercial.
 - **Fibo 2.0 Dev** (30 steps, CFG 5): the base model Edit Turbo was distilled from, for text to image and edits that follow the prompt more closely. 4.9 GB beside Edit Turbo, whose text encoder and VAE it shares. About 32 min at 1024x1024 on an 8 Elite. Same chips, RAM and licence as Edit Turbo.

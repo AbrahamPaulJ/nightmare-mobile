@@ -92,6 +92,15 @@ clothes-swap flow where you only change the photo and press Run.
 After a tap or a pick, **Grow** widens or narrows the selected area, and **Feather** softens its
 edge.
 
+### Layout boxes (MOSS-Image)
+
+With a **MOSS-Image** model, the Inpaint node has a **Layout** tab. Draw a box on your photo where
+each new thing should go and say what it is (an object, a character, or text with its exact words).
+Every box is repainted, so the boxes are the mask: you do not have to paint anything. Describe the
+whole edited picture in the prompt. The first box sets **Denoise** to 1 and a light **Feather**,
+which give the cleanest edits. Boxes can overlap what is already there: a title box placed over a
+tree comes out woven through its branches.
+
 ## Only masked, and Stitch to original image
 
 - **Only masked** (on by default): the model works on a crop around your mask rather than the
